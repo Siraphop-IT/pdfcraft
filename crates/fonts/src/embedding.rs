@@ -96,6 +96,78 @@ pub fn validate(bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+/// The start of a two-byte ToUnicode CMap; [`CMAP_TAIL`] ends it.
+const UNICODE_CMAP_HEAD: &str = "/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CMapName /PCUnicode def\n/CMapType 2 def\n1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n";
+const CMAP_TAIL: &str = "endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n";
+
+/// The `/BaseFont` of [`glyphless_font`].
+pub const GLYPHLESS_FONT: &str = "PCGlyphless";
+/// The page font resource name an OCR text layer gives [`glyphless_font`].
+pub const GLYPHLESS_RESOURCE: &str = "PCOcrU";
+
+/// A Type 0 font without glyphs for invisible text (an OCR text layer): Identity-H, each two-byte
+/// code is its CID, and its ToUnicode maps every code to the UTF-16 unit of the same value, so
+/// text written as its own UTF-16 codes (one em wide each) reads back as that text. It has no
+/// font program: invisible text (rendering mode 3) is never drawn. One copy per document: an
+/// earlier one is reused.
+pub fn glyphless_font(doc: &mut Document) -> Object {
+    let existing = doc.scan_objects().take(65_536).find_map(|(r, o)| match o.as_ref() {
+        Object::Dict(d)
+            if d.get(b"Subtype").and_then(Object::as_name) == Some(b"Type0")
+                && d.get(b"BaseFont").and_then(Object::as_name) == Some(GLYPHLESS_FONT.as_bytes()) =>
+        {
+            Some(r)
+        }
+        _ => None,
+    });
+    if let Some(r) = existing {
+        return Object::Ref(r);
+    }
+    let mut cmap = String::from(UNICODE_CMAP_HEAD);
+    // One range per high byte (the last byte of a bfrange may not wrap), skipping surrogates.
+    let blocks: Vec<u32> = (0..=0xFF).filter(|hi| !(0xD8..=0xDF).contains(hi)).collect();
+    for chunk in blocks.chunks(100) {
+        let _ = writeln!(cmap, "{} beginbfrange", chunk.len());
+        for hi in chunk {
+            let _ = writeln!(cmap, "<{hi:02X}00> <{hi:02X}FF> <{hi:02X}00>");
+        }
+        cmap.push_str("endbfrange\n");
+    }
+    cmap.push_str(CMAP_TAIL);
+    let mut descriptor = Dict::new();
+    descriptor.set(b"Type".to_vec(), Object::name("FontDescriptor"));
+    descriptor.set(b"FontName".to_vec(), Object::name(GLYPHLESS_FONT));
+    descriptor.set(b"Flags".to_vec(), Object::Int(4));
+    descriptor.set(b"FontBBox".to_vec(), Object::Array([0, -200, 1000, 800].map(Object::Int).to_vec()));
+    descriptor.set(b"ItalicAngle".to_vec(), Object::Int(0));
+    descriptor.set(b"Ascent".to_vec(), Object::Int(800));
+    descriptor.set(b"Descent".to_vec(), Object::Int(-200));
+    descriptor.set(b"CapHeight".to_vec(), Object::Int(700));
+    descriptor.set(b"StemV".to_vec(), Object::Int(80));
+    let desc = Object::Ref(doc.add(Object::Dict(descriptor)));
+    let mut system = Dict::new();
+    system.set(b"Registry".to_vec(), Object::String(PdfString::literal(b"Adobe".to_vec())));
+    system.set(b"Ordering".to_vec(), Object::String(PdfString::literal(b"Identity".to_vec())));
+    system.set(b"Supplement".to_vec(), Object::Int(0));
+    let mut cid = Dict::new();
+    cid.set(b"Type".to_vec(), Object::name("Font"));
+    cid.set(b"Subtype".to_vec(), Object::name("CIDFontType2"));
+    cid.set(b"BaseFont".to_vec(), Object::name(GLYPHLESS_FONT));
+    cid.set(b"CIDSystemInfo".to_vec(), Object::Dict(system));
+    cid.set(b"FontDescriptor".to_vec(), desc);
+    cid.set(b"DW".to_vec(), Object::Int(1000));
+    cid.set(b"CIDToGIDMap".to_vec(), Object::name("Identity"));
+    let descendant = Object::Ref(doc.add(Object::Dict(cid)));
+    let mut top = Dict::new();
+    top.set(b"Type".to_vec(), Object::name("Font"));
+    top.set(b"Subtype".to_vec(), Object::name("Type0"));
+    top.set(b"BaseFont".to_vec(), Object::name(GLYPHLESS_FONT));
+    top.set(b"Encoding".to_vec(), Object::name("Identity-H"));
+    top.set(b"DescendantFonts".to_vec(), Object::Array(vec![descendant]));
+    top.set(b"ToUnicode".to_vec(), Object::Ref(doc.add(Object::Stream(Stream::flate(Dict::new(), cmap.as_bytes())))));
+    Object::Ref(doc.add(Object::Dict(top)))
+}
+
 fn stream(doc: &mut Document, bytes: Vec<u8>) -> Object {
     Object::Ref(doc.add(Object::Stream(Stream::from_raw(Dict::new(), bytes))))
 }
@@ -140,9 +212,7 @@ pub fn embed_mapping(
     let mut cff_widths = std::collections::BTreeMap::new();
     let mut gids = vec![0, 0];
     let mut widths = Vec::with_capacity(mappings.len());
-    let mut cmap = String::from(
-        "/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CMapName /PCUnicode def\n/CMapType 2 def\n1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n",
-    );
+    let mut cmap = String::from(UNICODE_CMAP_HEAD);
     for (chunk_index, chunk) in mappings.chunks(100).enumerate() {
         let _ = writeln!(cmap, "{} beginbfchar", chunk.len());
         let _ = writeln!(cid_encoding, "{} begincidchar", chunk.len());
@@ -166,7 +236,7 @@ pub fn embed_mapping(
         cmap.push_str("endbfchar\n");
         cid_encoding.push_str("endcidchar\n");
     }
-    cmap.push_str("endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n");
+    cmap.push_str(CMAP_TAIL);
     cid_encoding.push_str("endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n");
     let name = family.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_')).collect::<String>();
     if name.is_empty() || name.len() > 128 {

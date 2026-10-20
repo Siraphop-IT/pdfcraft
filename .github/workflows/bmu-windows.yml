@@ -23,6 +23,16 @@ jobs:
         run: rustup show
       - name: WiX v5
         run: dotnet tool install --global wix --version 5.0.2
+      # Windows' own recogniser reads Thai; add its Thai recognition (the runner has English
+      # only) and run the Windows OCR tests before packaging.
+      - name: Thai text recognition
+        shell: pwsh
+        run: Add-WindowsCapability -Online -Name "Language.OCR~~~th-TH~0.0.1.0" | Out-String
+      - name: Windows OCR tests
+        run: |
+          cargo clippy -p pdfcraft-ocr --all-targets -- -D warnings
+          cargo test -p pdfcraft-ocr
+          cargo test -p pdfcraft-engine --test windows_ocr --test ocr_edit -- --nocapture
       - name: Build and package
         shell: pwsh
         env:

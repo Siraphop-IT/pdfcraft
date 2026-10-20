@@ -207,3 +207,30 @@ fn visible_stretched_text_rewrites_unchanged() {
     let i = ((y * out.width + x) * 4) as usize;
     assert_eq!(&out.rgba[i..i + 3], &[255, 255, 255]);
 }
+
+/// Thai from Windows' recogniser can't be written in WinAnsi Helvetica: it goes into the
+/// glyphless font and reads back as the same Thai, also after a save, and a second run on the
+/// page reuses that font instead of adding another copy.
+#[test]
+fn thai_ocr_words_read_back_as_thai() {
+    let thai = "ใบกำกับภาษี";
+    let (mut s, id) = scanned_with(vec![PlacedWord { text: thai.into(), origin: [40.0, 40.0], across: [60.0, 0.0], up: [0.0, 20.0] }]);
+    let blocks = s.get(id).unwrap().text_blocks(0);
+    assert_eq!(blocks.len(), 1);
+    assert!(blocks[0].invisible);
+    assert_eq!(blocks[0].text, thai, "not ? marks");
+    s.apply(
+        id,
+        Edit::AddOcrText {
+            page: 0, words: vec![PlacedWord { text: "เลขที่".into(), origin: [40.0, 70.0], across: [30.0, 0.0], up: [0.0, 10.0] }]
+        },
+    )
+    .unwrap();
+    let bytes = s.save_bytes(id).unwrap();
+    let mut again = Session::new();
+    let id = again.open("scan.pdf", None, bytes.clone(), None).unwrap();
+    let text: Vec<String> = again.get(id).unwrap().text_blocks(0).into_iter().map(|b| b.text).collect();
+    assert!(text.iter().any(|t| t == thai) && text.iter().any(|t| t == "เลขที่"), "{text:?}");
+    let fonts = bytes.windows(b"/PCGlyphless".len()).filter(|w| *w == b"/PCGlyphless").count();
+    assert_eq!(fonts, 3, "one glyphless font: its Type0, CIDFont and descriptor name it once each");
+}

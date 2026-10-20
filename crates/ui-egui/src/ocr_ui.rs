@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use egui::{Align, Layout};
 use pdfcraft_engine::DocId;
-use pdfcraft_engine::ocr::{LANGUAGES, OcrPage, OcrSettings};
+use pdfcraft_engine::ocr::{OcrPage, OcrSettings};
 
 use crate::theme::{self, Tokens};
 use crate::{PdfCraftApp, widgets};
@@ -34,8 +34,22 @@ pub struct OcrDraft {
 
 impl Default for OcrDraft {
     fn default() -> Self {
-        OcrDraft { pages: OcrPages::All, from: 1, to: 1, language: "en".into(), dpi: 300, text_pages: false }
+        OcrDraft { pages: OcrPages::All, from: 1, to: 1, language: default_language(), dpi: 300, text_pages: false }
     }
+}
+
+/// How to make Thai readable, shown only in the Thai interface (so it is written in Thai rather
+/// than kept in every catalog): Windows reads the languages added in its settings.
+const THAI_OCR_HINT: &str = "หากต้องการ OCR ภาษาไทย ให้เพิ่มภาษาไทยใน Windows: Settings ▸ Time & language ▸ Language & region แล้วเปิดหน้าต่างนี้ใหม่";
+
+/// Thai when the interface is in Thai and Windows reads Thai, else English (the models).
+fn default_language() -> String {
+    if crate::i18n::current().code() == "th"
+        && let Some((tag, _)) = pdfcraft_engine::ocr::languages().into_iter().find(|(tag, _)| tag == "th" || tag.starts_with("th-"))
+    {
+        return tag;
+    }
+    "en".into()
 }
 
 impl OcrDraft {
@@ -69,8 +83,12 @@ pub struct OcrRun {
 
 pub(crate) fn body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> (bool, bool) {
     let pages = app.active_ids().and_then(|(_, id)| app.session.get(id)).map_or(1, |d| d.info.pages.len().max(1));
-    let available = pdfcraft_engine::ocr::available();
+    let languages = pdfcraft_engine::ocr::languages();
     let d = &mut app.ocr_draft;
+    if !languages.iter().any(|(code, _)| *code == d.language) {
+        d.language = "en".into();
+    }
+    let available = pdfcraft_engine::ocr::available_for(&d.language);
     d.to = d.to.clamp(1, pages);
     d.from = d.from.clamp(1, d.to);
     ui.label(egui::RichText::new(tl!("Recognize Text")).font(theme::semibold(18.0)));
@@ -97,10 +115,10 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> (boo
     group(ui, "Settings", &mut |ui| {
         egui::Grid::new("ocr-settings").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
             ui.label(tl!("Document language"));
-            let name = LANGUAGES.iter().find(|l| l.0 == d.language).map_or("English", |l| l.1);
+            let name = languages.iter().find(|l| l.0 == d.language).map_or("English", |l| l.1.as_str());
             egui::ComboBox::from_id_salt("ocr-language").selected_text(tl!(name)).width(220.0).show_ui(ui, |ui| {
-                for (code, name) in LANGUAGES {
-                    ui.selectable_value(&mut d.language, (*code).to_string(), tl!(*name));
+                for (code, name) in &languages {
+                    ui.selectable_value(&mut d.language, code.clone(), tl!(name.as_str()));
                 }
             });
             ui.end_row();
@@ -123,6 +141,11 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> (boo
         ui.add(crate::widgets::checkbox(&mut d.text_pages, tl!("Also recognize pages that already have text")))
             .on_hover_text(tl!("Pictures on those pages are recognized too; words already in the page's text are not added again"));
     });
+    // Thai is read by Windows' recogniser, which reads the languages added in Windows.
+    if cfg!(target_os = "windows") && crate::i18n::current().code() == "th" && !languages.iter().any(|(code, _)| code.starts_with("th")) {
+        ui.label(egui::RichText::new(THAI_OCR_HINT).small().color(t.text_muted));
+        ui.add_space(6.0);
+    }
     if !available {
         ui.label(
             egui::RichText::new(tl!("Text recognition isn't installed: its model files are missing. Reinstall BMU PDF, or set PDFCRAFT_MODELS to the folder that holds them."))
@@ -169,7 +192,7 @@ impl PdfCraftApp {
         let progress = Arc::new(Mutex::new(OcrProgress { total: job.pages.len(), ..Default::default() }));
         let p = progress.clone();
         let work = move || {
-            let result = pdfcraft_engine::ocr::engine().map(|ocr| {
+            let result = pdfcraft_engine::ocr::engine_for(&job.settings.language).map(|ocr| {
                 job.run(&ocr, |done, total| {
                     let Ok(mut s) = p.lock() else { return false };
                     s.done = done;
@@ -228,7 +251,7 @@ impl PdfCraftApp {
         let work = move || {
             crate::i18n::set_current(lang);
             let (mut ok, mut words, mut failed) = (0, 0, Vec::new());
-            match pdfcraft_engine::ocr::engine() {
+            match pdfcraft_engine::ocr::engine_for(&settings.language) {
                 Err(e) => failed.push(e),
                 Ok(ocr) => {
                     for (i, (name, bytes)) in files.into_iter().enumerate() {

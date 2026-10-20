@@ -1763,11 +1763,11 @@ title = "Help ▸ Check for updates"
 area = "B"
 tier = "P2"
 milestone = "M3"
-status = "partial"
-commands = ["help.check_updates"]
+status = "na"
+commands = []
 tools = []
-evidence = ["crates/ui-egui/tests/ui_group/updates.rs::a_newer_release_is_offered_for_download", "crates/ui-egui/tests/ui_group/updates.rs::nothing_is_asked_until_the_user_checks", "apps/pdfcraft/src/updates.rs::answers_are_read_and_only_our_release_pages_are_offered"]
-notes = "asks GitHub Releases on request and offers the release page. By the owner's decision there is no check at start and no in-place install (Acrobat has both)"
+evidence = []
+notes = "Removed in BMU PDF by the owner's decision (no network access; updates are installed by the office). Upstream PdfCraft asks GitHub Releases on request."
 
 [[feature]]
 id = "view.single-key-accelerators"
@@ -6505,7 +6505,7 @@ status = "partial"
 commands = ["ocr.recognize"]
 tools = ["ocr_recognize"]
 evidence = ["crates/ui-egui/tests/ocr.rs::recognize_text_dialog_adds_searchable_text"]
-notes = "Language choice exists, but the models read only the Latin alphabet without accents (English)."
+notes = "English is read by the ocrs models (Latin alphabet without accents). On Windows, Thai and every other language added in Windows are read by Windows.Media.Ocr (BMU PDF, 2026-10-20); their words go into a glyphless Type0 text layer that searches and copies as Unicode. Elsewhere only English. Missing: accented Latin on macOS/Linux, OCR accuracy not measured against Acrobat, editing a Thai OCR word needs a Thai font in the build."
 
 [[feature]]
 id = "ocr.searchable-image"
@@ -6717,11 +6717,11 @@ title = "Pluggable OCR engines (ocrs default; tesseract optional)"
 area = "I"
 tier = "P1"
 milestone = "M10"
-status = "planned"
-commands = []
-tools = []
-evidence = []
-notes = ""
+status = "partial"
+commands = ["ocr.recognize"]
+tools = ["ocr_recognize", "ocr_status"]
+evidence = ["crates/engine/tests/windows_ocr.rs::windows_recognises_a_rendered_page", "crates/engine/tests/ocr_edit.rs::thai_ocr_words_read_back_as_thai"]
+notes = "Two engines chosen by language: the ocrs models (English) and, on Windows, Windows.Media.Ocr (any language added in Windows, Thai included). No Tesseract, no macOS Vision engine yet."
 
 [[feature]]
 id = "ocr.ocr-web"

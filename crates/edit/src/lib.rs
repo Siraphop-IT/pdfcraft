@@ -311,6 +311,13 @@ fn add_resources(doc: &mut Document, page: &pdfcraft_model::Page, opacity: Optio
         font.set(b"Encoding".to_vec(), Object::name("WinAnsiEncoding"));
         fonts.set(name.to_vec(), Object::Dict(font));
     }
+    // An OCR layer's words outside WinAnsi (Thai) are written in the glyphless font.
+    let unicode = pdfcraft_fonts::embedding::GLYPHLESS_RESOURCE.as_bytes();
+    if !fonts.contains(unicode)
+        && content.is_some_and(|c| c.windows(unicode.len() + 1).any(|w| w.first() == Some(&b'/') && w.get(1..) == Some(unicode)))
+    {
+        fonts.set(unicode.to_vec(), pdfcraft_fonts::embedding::glyphless_font(doc));
+    }
     res.set(b"Font".to_vec(), Object::Dict(fonts));
     if let Some(o) = opacity {
         let mut gs = res.get(b"ExtGState").map(|g| doc.resolve(g)).and_then(|g| g.as_dict().cloned()).unwrap_or_default();

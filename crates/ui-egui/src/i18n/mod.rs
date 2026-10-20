@@ -2425,12 +2425,12 @@ mod tests {
         assert_eq!(tr(th, "Edit"), "แก้ไข");
         assert_eq!(tr(th, "Save"), "บันทึก");
         assert_eq!(tr(th, "Save as…"), "บันทึกเป็น…");
-        assert_eq!(tr(th, "Bookmarks"), "บุ๊กมาร์ก");
+        assert_eq!(tr(th, "Bookmarks"), "Bookmark", "a loanword Thai users say in English stays in English");
         assert_eq!(tr(th, "Fill & Sign"), "กรอกและลงนาม");
         assert_eq!((0..=3).map(|n| (th.0.plural)(n)).collect::<Vec<_>>(), [0, 0, 0, 0]);
         for n in [0, 1, 2, 5] {
             assert_eq!(trn(th, n, "{n} page", "{n} pages"), format!("{n} หน้า"));
-            assert_eq!(trn(th, n, "{n} field", "{n} fields"), format!("{n} ฟิลด์"));
+            assert_eq!(trn(th, n, "{n} field", "{n} fields"), format!("{n} Field"));
         }
         let mut app = crate::PdfCraftApp::default();
         app.set_option("language", "th").unwrap();

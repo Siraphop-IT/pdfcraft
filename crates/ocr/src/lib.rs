@@ -7,10 +7,16 @@
 //! searchable image (Acrobat's "Searchable Image (Exact)": the image is left untouched).
 //!
 //! The models read the Latin alphabet (English and other languages written without accents).
+//! On Windows, other languages (Thai among them) are read by Windows' own recogniser
+//! ([`Ocr::for_language`], `Windows.Media.Ocr`) when that language is added in Windows; their
+//! words go into the text layer in [`UNICODE_FONT`], a font without glyphs.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 use std::path::{Path, PathBuf};
+
+#[cfg(target_os = "windows")]
+mod windows_ocr;
 
 pub use pdfcraft_fonts::helvetica_width;
 
@@ -38,6 +44,9 @@ pub enum OcrError {
     Recognize(String),
     #[error("the image is empty")]
     EmptyImage,
+    /// Windows can't read this language: its text recognition isn't installed.
+    #[error("Windows can't read \"{0}\" text: add the language in Settings ▸ Time & language ▸ Language & region")]
+    LanguageNotInstalled(String),
 }
 
 /// Where the two model files are.
@@ -105,10 +114,36 @@ impl Line {
 
 /// A loaded recogniser. Loading takes a moment; keep one and reuse it.
 pub struct Ocr {
-    engine: ocrs::OcrEngine,
+    backend: Backend,
+}
+
+enum Backend {
+    Ocrs(Box<ocrs::OcrEngine>),
+    #[cfg(target_os = "windows")]
+    Windows(windows_ocr::WindowsOcr),
+}
+
+/// The languages Windows' own recogniser reads on this machine, `(tag, name)`; none elsewhere.
+pub fn system_languages() -> Vec<(String, String)> {
+    #[cfg(target_os = "windows")]
+    return windows_ocr::languages();
+    #[cfg(not(target_os = "windows"))]
+    Vec::new()
 }
 
 impl Ocr {
+    /// The recogniser for `language`: the models for a code in [`LANGUAGES`], else Windows' own
+    /// recogniser for that language (a tag from [`system_languages`]).
+    pub fn for_language(language: &str) -> Result<Ocr, OcrError> {
+        if LANGUAGES.iter().any(|(code, _)| *code == language) {
+            return Self::find();
+        }
+        #[cfg(target_os = "windows")]
+        return Ok(Ocr { backend: Backend::Windows(windows_ocr::WindowsOcr::new(language)?) });
+        #[cfg(not(target_os = "windows"))]
+        Err(OcrError::LanguageNotInstalled(language.to_string()))
+    }
+
     pub fn load(models: &Models) -> Result<Ocr, OcrError> {
         let load = |p: &Path| rten::Model::load_file(p).map_err(|e| OcrError::Load(p.display().to_string(), e.to_string()));
         let params = ocrs::OcrEngineParams {
@@ -118,7 +153,7 @@ impl Ocr {
             ..Default::default()
         };
         let engine = ocrs::OcrEngine::new(params).map_err(|e| OcrError::Load("ocr engine".into(), e.to_string()))?;
-        Ok(Ocr { engine })
+        Ok(Ocr { backend: Backend::Ocrs(Box::new(engine)) })
     }
 
     /// Load the models found by [`Models::find`].
@@ -131,6 +166,13 @@ impl Ocr {
         if width == 0 || height == 0 || pixels.is_empty() {
             return Err(OcrError::EmptyImage);
         }
+        // One arm off Windows, where Windows' recogniser isn't built.
+        #[cfg_attr(not(target_os = "windows"), expect(clippy::infallible_destructuring_match))]
+        let engine = match &self.backend {
+            Backend::Ocrs(engine) => engine,
+            #[cfg(target_os = "windows")]
+            Backend::Windows(w) => return w.recognize(pixels, width, height),
+        };
         // ocrs wants 1 or 3 channels.
         let rgb: std::borrow::Cow<[u8]> = if pixels.len() == (width * height * 4) as usize {
             pixels.as_chunks::<4>().0.iter().flat_map(|p| [p[0], p[1], p[2]]).collect::<Vec<u8>>().into()
@@ -139,10 +181,10 @@ impl Ocr {
         };
         let err = |e: &dyn std::fmt::Display| OcrError::Recognize(e.to_string());
         let source = ocrs::ImageSource::from_bytes(&rgb, (width, height)).map_err(|e| err(&e))?;
-        let input = self.engine.prepare_input(source).map_err(|e| err(&e))?;
-        let found = self.engine.detect_words(&input).map_err(|e| err(&e))?;
-        let lines = self.engine.find_text_lines(&input, &found);
-        let read = self.engine.recognize_text(&input, &lines).map_err(|e| err(&e))?;
+        let input = engine.prepare_input(source).map_err(|e| err(&e))?;
+        let found = engine.detect_words(&input).map_err(|e| err(&e))?;
+        let lines = engine.find_text_lines(&input, &found);
+        let read = engine.recognize_text(&input, &lines).map_err(|e| err(&e))?;
         use ocrs::TextItem;
         Ok(read
             .into_iter()
@@ -211,19 +253,48 @@ fn num(v: f64) -> String {
     if s == "-0" { "0".into() } else { s.into() }
 }
 
+/// The page font resource the text layer writes words outside WinAnsi in: a font without glyphs
+/// whose codes are the characters' own (UTF-16) values
+/// ([`pdfcraft_fonts::embedding::glyphless_font`]), so search and copy read them back.
+pub const UNICODE_FONT: &str = pdfcraft_fonts::embedding::GLYPHLESS_RESOURCE;
+
+/// `text` as a hex string of the glyphless font's two-byte codes (characters past U+FFFF, which
+/// it has no code for, become U+FFFD).
+fn unicode_codes(text: &str) -> Vec<u8> {
+    let mut out = b"<".to_vec();
+    for c in text.chars() {
+        let code = match u32::from(c) {
+            0x09 => 0x20,
+            v @ 0..=0xFFFF => v,
+            _ => 0xFFFD,
+        };
+        out.extend_from_slice(format!("{code:04X}").as_bytes());
+    }
+    out.push(b'>');
+    out
+}
+
 /// Page content that writes `words` as invisible text in `/PCHelv` (standard Helvetica,
-/// WinAnsiEncoding), each word stretched to its box so selection and search highlight the
-/// right place. Marked content `/OCR` so it can be told apart from the page's own text.
+/// WinAnsiEncoding), or [`UNICODE_FONT`] for a word Helvetica can't hold (Thai), each word
+/// stretched to its box so selection and search highlight the right place. Marked content `/OCR`
+/// so it can be told apart from the page's own text.
 pub fn text_layer(words: &[PlacedWord]) -> Vec<u8> {
     // `3 Tr` and the font are graphics state, which `ET` doesn't reset: without `q … Q` they
     // would stay set for every later content stream on the page, so text added after OCR (a
     // header or footer) drew invisibly (#3029).
     let mut out = b"/OCR BMC\nq\nBT\n3 Tr\n/PCHelv 1 Tf\n".to_vec();
+    let mut unicode_font = false;
     for w in words {
-        let width = helvetica_width(&w.text, 1.0);
+        let unicode = pdfcraft_fonts::first_non_win_ansi(&w.text).is_some();
+        // Every glyphless code is one em wide.
+        let width = if unicode { w.text.chars().count() as f64 } else { helvetica_width(&w.text, 1.0) };
         let height = w.up[0].hypot(w.up[1]);
-        if width <= 0.0 || height <= 0.0 {
+        if !(width > 0.0 && width.is_finite()) || !(height > 0.0 && height.is_finite()) {
             continue;
+        }
+        if unicode != unicode_font {
+            out.extend_from_slice(if unicode { format!("/{UNICODE_FONT} 1 Tf\n").into_bytes() } else { b"/PCHelv 1 Tf\n".to_vec() }.as_slice());
+            unicode_font = unicode;
         }
         // The em square: the word's own ink (cap height or x-height, descenders or not) spans the
         // box, so the text is as tall as the scanned word; its width is stretched to fit the word.
@@ -235,7 +306,11 @@ pub fn text_layer(words: &[PlacedWord]) -> Vec<u8> {
         let nums: Vec<String> = m.iter().map(|v| num(*v)).collect();
         out.extend_from_slice(nums.join(" ").as_bytes());
         out.extend_from_slice(b" Tm ");
-        out.extend(pdfcraft_fonts::literal(&pdfcraft_fonts::win_ansi(&w.text)));
+        if unicode {
+            out.extend(unicode_codes(&w.text));
+        } else {
+            out.extend(pdfcraft_fonts::literal(&pdfcraft_fonts::win_ansi(&w.text)));
+        }
         out.extend_from_slice(b" Tj\n");
     }
     out.extend_from_slice(b"ET\nQ\nEMC\n");
@@ -256,9 +331,9 @@ mod tests {
         assert_eq!(w.up, [0.0, 20.0]);
     }
 
-    /// The text layer is Helvetica in WinAnsiEncoding: every character the model can recognise
-    /// must be one it can hold, or recognised text would be saved as `?`. A model with a wider
-    /// alphabet (Chinese, for example) needs a text layer in another font first.
+    /// The models' words go into Helvetica in WinAnsiEncoding: every character they can recognise
+    /// must be one it can hold, or recognised text would be saved as `?`. (Windows' recogniser
+    /// reads wider alphabets; those words go into [`UNICODE_FONT`].)
     #[test]
     fn the_model_alphabet_fits_the_text_layer_font() {
         assert_eq!(pdfcraft_fonts::first_undrawable(ALPHABET), None);
@@ -273,6 +348,24 @@ mod tests {
         // "Hi" has no descender: its box spans the cap height, from the baseline up.
         assert!(s.contains(&format!("{} 0 0 {} 10 20 Tm (Hi) Tj", num(30.0 / width), num(9.3 / CAP_HEIGHT))), "{s}");
         assert!(s.starts_with("/OCR BMC") && s.ends_with("EMC\n"));
+    }
+
+    /// Thai (from Windows' recogniser) can't be written in WinAnsi: it goes into the glyphless
+    /// font as its own UTF-16 codes, one em per character, and the layer switches back to
+    /// Helvetica for the next Latin word.
+    #[test]
+    fn words_outside_win_ansi_use_the_unicode_font() {
+        let thai = PlacedWord { text: "ใบกำกับภาษี".into(), origin: [10.0, 20.0], across: [44.0, 0.0], up: [0.0, 9.0] };
+        let latin = PlacedWord { text: "VAT".into(), origin: [60.0, 20.0], across: [20.0, 0.0], up: [0.0, 9.0] };
+        let s = String::from_utf8(text_layer(&[thai, latin])).unwrap();
+        let codes: String = "ใบกำกับภาษี".chars().map(|c| format!("{:04X}", u32::from(c))).collect();
+        assert!(s.contains(&format!("/{UNICODE_FONT} 1 Tf\n")), "{s}");
+        assert!(s.contains(&format!("<{codes}> Tj")), "{s}");
+        // 11 characters across 44 points: 4 points each.
+        assert!(s.contains(&format!("{} 0 0 ", num(44.0 / 11.0))), "{s}");
+        let back = s.find(&format!("<{codes}>")).and_then(|at| s[at..].find("/PCHelv 1 Tf")).is_some();
+        assert!(back && s.contains("(VAT) Tj"), "Helvetica again for the Latin word: {s}");
+        assert_eq!(unicode_codes("\u{1F600}a"), b"<FFFD0061>", "past the BMP becomes U+FFFD");
     }
 
     /// #3029: the layer's invisible rendering mode and font end with the layer. Every operator

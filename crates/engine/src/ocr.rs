@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use pdfcraft_render::{PageInfo, PageRenderer, RenderConfig, RenderRequest, RequestKind};
 
-pub use pdfcraft_ocr::{LANGUAGES, Models, Ocr, OcrError, PlacedWord};
+pub use pdfcraft_ocr::{LANGUAGES, Models, Ocr, OcrError, PlacedWord, system_languages};
 
 use crate::{DocId, Edit, EditError, Session};
 
@@ -18,7 +18,8 @@ use crate::{DocId, Edit, EditError, Session};
 pub struct OcrSettings {
     /// Resolution pages are rendered at for recognition (Acrobat's "Downsample to" choices).
     pub dpi: f32,
-    /// Language code from [`LANGUAGES`] (the models read the Latin alphabet, whatever this says).
+    /// Language code from [`languages`]: `en` is read by the models (the Latin alphabet), any
+    /// other by Windows' own recogniser.
     pub language: String,
     /// Leave pages that already have text alone (Acrobat reports "page contains renderable
     /// text" and skips them). When `false`, such pages are read too (a picture on a page that
@@ -72,21 +73,43 @@ impl OcrPage {
     }
 }
 
-/// The recogniser, loaded once (it takes a moment) and shared.
+/// The models' recogniser (English), loaded once (it takes a moment) and shared.
 pub fn engine() -> Result<Arc<Ocr>, String> {
-    static OCR: Mutex<Option<Arc<Ocr>>> = Mutex::new(None);
-    let mut slot = OCR.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(o) = slot.as_ref() {
+    engine_for("en")
+}
+
+/// The recogniser for `language` (a code from [`languages`]), loaded once and shared.
+pub fn engine_for(language: &str) -> Result<Arc<Ocr>, String> {
+    static OCR: Mutex<Vec<(String, Arc<Ocr>)>> = Mutex::new(Vec::new());
+    let mut loaded = OCR.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((_, o)) = loaded.iter().find(|(l, _)| l == language) {
         return Ok(o.clone());
     }
-    let o = Arc::new(Ocr::find().map_err(|e| e.to_string())?);
-    *slot = Some(o.clone());
+    let o = Arc::new(Ocr::for_language(language).map_err(|e| e.to_string())?);
+    loaded.push((language.to_string(), o.clone()));
     Ok(o)
+}
+
+/// The languages text can be recognised in, `(code, name)`: the models' (English), then the ones
+/// Windows reads on this machine (English variants left out: the models read those).
+pub fn languages() -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = LANGUAGES.iter().map(|(c, n)| ((*c).to_string(), (*n).to_string())).collect();
+    out.extend(system_languages().into_iter().filter(|(tag, _)| !tag.eq_ignore_ascii_case("en") && !tag.to_ascii_lowercase().starts_with("en-")));
+    out
 }
 
 /// Whether the recognition models are installed.
 pub fn available() -> bool {
     Models::find().is_some()
+}
+
+/// Whether text in `language` can be recognised here: the models are installed (English), or
+/// Windows reads it.
+pub fn available_for(language: &str) -> bool {
+    if LANGUAGES.iter().any(|(c, _)| *c == language) {
+        return available();
+    }
+    languages().iter().any(|(c, _)| c == language)
 }
 
 /// Everything recognition needs from a document, detached from the session.
@@ -207,7 +230,7 @@ impl Session {
         if let Some(why) = self.get(id).and_then(|d| d.read_only_reason.clone()) {
             return Err(why);
         }
-        let ocr = engine()?;
+        let ocr = engine_for(&job.settings.language)?;
         let found = job.run(&ocr, |_, _| true);
         self.apply_ocr(id, &found).map_err(|e| e.to_string())?;
         Ok(found)
