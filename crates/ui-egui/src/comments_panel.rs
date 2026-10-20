@@ -199,6 +199,13 @@ pub(crate) fn show(
             SortBy::Date => None,
         }
     };
+    // A comment selected elsewhere (on the page, or just added) opens its folded group, or the
+    // card it should scroll to would not be drawn.
+    if view.comments.reveal
+        && let Some((p, _)) = view.comments.selected
+    {
+        view.comments.collapsed_pages.retain(|&c| c != p);
+    }
     let mut page = usize::MAX;
     let mut group: Option<String> = None;
     for a in roots {
@@ -215,20 +222,40 @@ pub(crate) fn show(
         } else if a.page != page {
             page = a.page;
             let n = info.annotations.iter().filter(|x| x.page == page && x.in_reply_to.is_none()).count();
+            let open = !view.comments.collapsed_pages.contains(&page);
             ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.add(icons::image("chevron-down", 14.0, t.text_muted));
-                ui.label(
-                    egui::RichText::new(crate::i18n::fmt(tl!("Page {label}"), &[("label", &info.pages[page].label)]))
-                        .font(theme::semibold(12.5))
-                        .color(t.text_muted),
-                );
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| ui.label(egui::RichText::new(n.to_string()).color(t.text_faint).small()));
-            });
+            let clicked = ui
+                .horizontal(|ui| {
+                    let chevron = if open { "chevron-down" } else { "chevron-right" };
+                    let toggle = icons::button(ui, chevron, 18.0, false, if open { tl!("Collapse") } else { tl!("Expand") }).clicked();
+                    let label = ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(crate::i18n::fmt(tl!("Page {label}"), &[("label", &info.pages[page].label)]))
+                                .font(theme::semibold(12.5))
+                                .color(t.text_muted),
+                        )
+                        .sense(Sense::click()),
+                    );
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(egui::RichText::new(n.to_string()).color(t.text_faint).small())
+                    });
+                    toggle || label.clicked()
+                })
+                .inner;
+            if clicked {
+                if open {
+                    view.comments.collapsed_pages.push(page);
+                } else {
+                    view.comments.collapsed_pages.retain(|&c| c != page);
+                }
+            }
             ui.add_space(2.0);
         }
+        if sort == SortBy::Page && view.comments.collapsed_pages.contains(&a.page) {
+            continue;
+        }
         let thread = replies_of(a);
-        if let Some(e) = card(ui, t, a, &thread, view, prefs, allowed, nav) {
+        if let Some(e) = card(ui, t, a, &thread, info, view, prefs, allowed, nav) {
             edit = Some(e);
         }
     }
@@ -241,6 +268,7 @@ fn card(
     t: &Tokens,
     a: &Annotation,
     thread: &[&Annotation],
+    info: &DocInfo,
     view: &mut DocView,
     prefs: &CommentPrefs,
     allowed: bool,
@@ -420,6 +448,7 @@ fn card(
         .layout(Layout::top_down_justified(Align::Min))
         .show(|ui| {
             ui.set_min_width(160.0);
+            crate::comments::attachment_items(ui, view, info, a);
             if ui.button(tl_ctx!("comment menu", "Edit")).clicked() {
                 view.comments.editing = Some((a.page, a.index, a.contents.clone().unwrap_or_default()));
                 ui.close();
@@ -516,6 +545,20 @@ pub(crate) fn header_controls(ui: &mut egui::Ui, info: &DocInfo, view: &mut DocV
         ] {
             if ui.add(widgets::radio(cv.sort == s, label)).clicked() {
                 cv.sort = s;
+                ui.close();
+            }
+        }
+        // Only the page sort has folding groups.
+        if cv.sort == SortBy::Page {
+            ui.separator();
+            if ui.button(tl!("Collapse all pages")).clicked() {
+                cv.collapsed_pages = info.annotations.iter().map(|a| a.page).collect();
+                cv.collapsed_pages.sort_unstable();
+                cv.collapsed_pages.dedup();
+                ui.close();
+            }
+            if ui.button(tl!("Expand all pages")).clicked() {
+                cv.collapsed_pages.clear();
                 ui.close();
             }
         }

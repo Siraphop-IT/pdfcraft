@@ -185,6 +185,70 @@ fn date_fields_offer_a_calendar() {
     assert_eq!(value(&h, "due"), vec![format!("{nm:02}/15/{ny}")], "picked in the field's format");
 }
 
+/// The calendar used to keep the month it opened on, so a date typed while it was open showed
+/// only after leaving the field and coming back.
+#[test]
+fn the_calendar_follows_a_complete_date_typed_while_it_is_open() {
+    use egui_kittest::kittest::Queryable;
+    let mut h = harness();
+    h.state_mut().apply_edit(pdfcraft_engine::Edit::AddField {
+        page: 0,
+        rect: [50.0, 40.0, 200.0, 60.0],
+        kind: pdfcraft_engine::NewField::Date,
+        name: Some("due".into()),
+    });
+    h.run_steps(4);
+    click_field(&mut h, "due", 0);
+    let (y, m, _) = h.state().session.today();
+    let month =
+        ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][(m - 1) as usize];
+    h.get_by_label(&format!("{month} {y}"));
+    // Half a date leaves the calendar where it is.
+    h.event(egui::Event::Text("03/1".into()));
+    h.run_steps(2);
+    h.get_by_label(&format!("{month} {y}"));
+    // The whole date moves it there.
+    h.event(egui::Event::Text("4/2025".into()));
+    h.run_steps(2);
+    h.get_by_label("March 2025");
+    // The arrows still turn the months, and the calendar stays on their month while the text
+    // doesn't change.
+    h.get_by_label("›").click();
+    h.run_steps(3);
+    h.get_by_label("April 2025");
+}
+
+/// A date format with its fields side by side ("yyyymmdd") refused every typed date, and its
+/// calendar opened on today's month.
+#[test]
+fn an_undelimited_date_field_takes_a_typed_date_and_its_calendar_opens_on_it() {
+    use egui_kittest::kittest::Queryable;
+    let mut h = harness();
+    h.state_mut().apply_edit(pdfcraft_engine::Edit::AddField {
+        page: 0,
+        rect: [50.0, 40.0, 200.0, 60.0],
+        kind: pdfcraft_engine::NewField::Date,
+        name: Some("due".into()),
+    });
+    assert!(h.state_mut().apply_edit(pdfcraft_engine::Edit::SetFieldProps {
+        name: "due".into(),
+        props: Box::new(pdfcraft_engine::FieldProps {
+            format: Some(pdfcraft_engine::form_scripts::Format::Date("yyyymmdd".into())),
+            ..Default::default()
+        }),
+    }));
+    h.run_steps(4);
+    click_field(&mut h, "due", 0);
+    h.event(egui::Event::Text("20250314".into()));
+    h.run_steps(2);
+    h.key_press(egui::Key::Tab);
+    h.run_steps(4);
+    assert_eq!(h.state().toast, None, "the typed date was not refused");
+    assert_eq!(value(&h, "due"), ["20250314"]);
+    click_field(&mut h, "due", 0);
+    h.get_by_label("March 2025");
+}
+
 #[test]
 fn lithuanian_calendar_localizes_months_and_weekdays_without_changing_field_values() {
     use egui_kittest::kittest::Queryable;
@@ -870,6 +934,77 @@ fn the_fields_panel_lists_a_field_on_a_missing_page_as_unplaced() {
     h.run_steps(6);
     h.get_by_label("Unplaced");
     assert_eq!(h.query_all_by_label("orphan").count(), 1);
+}
+
+#[test]
+fn list_box_clicks_select_directly_and_ctrl_click_toggles_multi() {
+    let bytes = pdf_from_objects(&[
+        "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R 5 0 R] /DA (/Helv 10 Tf 0 g) /DR << /Font << /Helv 6 0 R >> >> >> >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 400 400] >>",
+        "<< /Type /Page /Parent 2 0 R /Annots [4 0 R 5 0 R] >>",
+        "<< /Type /Annot /Subtype /Widget /FT /Ch /T (ListOne) /Opt [(Red) (Green) (Blue)] /Rect [50 250 200 320] /P 3 0 R /F 4 >>",
+        "<< /Type /Annot /Subtype /Widget /FT /Ch /T (ListMulti) /Ff 2097152 /Opt [(Mon) (Tue) (Wed) (Thu) (Fri)] /Rect [50 100 200 170] /P 3 0 R /F 4 >>",
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+    ]);
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(|_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("lists.pdf", None, bytes).unwrap();
+        app.set_option("left", "closed").unwrap();
+        app.set_option("zoom", "100").unwrap();
+        app
+    });
+    h.run_steps(4);
+
+    // Click row 1 (Green) in ListOne
+    let r_one = {
+        let s = h.state();
+        let doc = s.session.get(s.views[0].id).unwrap();
+        let f = doc.form.iter().find(|f| f.name == "ListOne").unwrap();
+        pdfcraft_ui_egui::forms_ui::field_screen_rect(&s.views[0], &doc.info, f, 0).expect("on screen")
+    };
+    let zoom_one = r_one.height() / 70.0;
+    let p_green = egui::pos2(r_one.center().x, r_one.min.y + 19.0 * zoom_one);
+    h.hover_at(p_green);
+    h.run_steps(1);
+    h.drag_at(p_green);
+    h.run_steps(1);
+    h.drop_at(p_green);
+    h.run_steps(3);
+
+    assert_eq!(value(&h, "ListOne"), ["Green"], "clicking row 1 in ListOne selected Green");
+
+    // Click row 1 (Tue) in ListMulti
+    let r_multi = {
+        let s = h.state();
+        let doc = s.session.get(s.views[0].id).unwrap();
+        let f = doc.form.iter().find(|f| f.name == "ListMulti").unwrap();
+        pdfcraft_ui_egui::forms_ui::field_screen_rect(&s.views[0], &doc.info, f, 0).expect("on screen")
+    };
+    let zoom_multi = r_multi.height() / 70.0;
+    let p_tue = egui::pos2(r_multi.center().x, r_multi.min.y + 19.0 * zoom_multi);
+    h.hover_at(p_tue);
+    h.run_steps(1);
+    h.drag_at(p_tue);
+    h.run_steps(1);
+    h.drop_at(p_tue);
+    h.run_steps(3);
+
+    assert_eq!(value(&h, "ListMulti"), ["Tue"], "clicking row 1 in ListMulti selected Tue");
+
+    // Ctrl/Cmd-click row 3 (Thu) in ListMulti
+    let p_thu = egui::pos2(r_multi.center().x, r_multi.min.y + 42.0 * zoom_multi);
+    h.hover_at(p_thu);
+    h.run_steps(1);
+    h.event(egui::Event::PointerMoved(p_thu));
+    h.event(egui::Event::ModifiersChanged(egui::Modifiers::COMMAND));
+    h.event(egui::Event::PointerButton { pos: p_thu, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::COMMAND });
+    h.run_steps(1);
+    h.event(egui::Event::PointerButton { pos: p_thu, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::COMMAND });
+    h.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    h.run_steps(3);
+
+    assert_eq!(value(&h, "ListMulti"), ["Tue", "Thu"], "Ctrl-clicking Thu toggled it on, keeping Tue");
 }
 
 /// Auto-size (`0 Tf`, inherited from the AcroForm) single-line and multiline fields, and a fixed 10 pt one.

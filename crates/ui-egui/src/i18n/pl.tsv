@@ -158,6 +158,7 @@
 	Next page	Następna strona
 	Previous page	Poprzednia strona
 	Current page — type a page number or label (such as iv) and press Enter	Bieżąca strona — wpisz numer lub etykietę strony (np. iv) i naciśnij Enter
+	Zoom — type a percentage and press Enter	Powiększenie — wpisz wartość procentową i naciśnij Enter
 	Welcome to BMU PDF	Witamy w BMU PDF
 	An open-source PDF workbench — local, private, and scriptable.	Otwarty zestaw narzędzi do PDF — lokalny, prywatny i obsługujący skrypty.
 	Join the ArtCraft community	Dołącz do społeczności ArtCraft
@@ -887,8 +888,8 @@
 	No changes allowed	Zmiany niedozwolone
 	Annotations, form fill-in, and digital signatures	Adnotacje, wypełnianie formularzy i podpisy cyfrowe
 	Form fill-in and digital signatures	Wypełnianie formularzy i podpisy cyfrowe
-	The key is in the macOS Keychain, which may ask to allow BMU PDF to use it.	Klucz znajduje się w pęku kluczy macOS, który może poprosić o zgodę na jego użycie przez PdfCraft.
-	The key is in the Windows certificate store, which may ask to allow BMU PDF to use it.	Klucz znajduje się w magazynie certyfikatów Windows, który może poprosić o zgodę na jego użycie przez PdfCraft.
+	The key is in the macOS Keychain, which may ask to allow BMU PDF to use it.	Klucz znajduje się w pęku kluczy macOS, który może poprosić o zgodę na jego użycie przez BMU PDF.
+	The key is in the Windows certificate store, which may ask to allow BMU PDF to use it.	Klucz znajduje się w magazynie certyfikatów Windows, który może poprosić o zgodę na jego użycie przez BMU PDF.
 	Digital ID password	Hasło identyfikatora cyfrowego
 	Back	Wstecz
 	Validate all	Zweryfikuj wszystkie
@@ -1310,6 +1311,8 @@
 	Expand all bookmarks	Rozwiń wszystkie zakładki
 	Expand top-level bookmarks	Rozwiń zakładki najwyższego poziomu
 	Collapse all bookmarks	Zwiń wszystkie zakładki
+	Collapse all pages	Zwiń wszystkie strony
+	Expand all pages	Rozwiń wszystkie strony
 	New bookmark (⌘B)	Nowa zakładka (⌘B)
 	This document has no bookmarks.	Ten dokument nie zawiera zakładek.
 	This document has no layers.	Ten dokument nie zawiera warstw.
@@ -1694,6 +1697,7 @@
 	Couldn't use {name}: {e}	Nie można użyć {name}: {e}
 	Couldn't extract pages: {e}	Nie można wyodrębnić stron: {e}
 	Couldn't write {name}: {e}	Nie można zapisać {name}: {e}
+	the name is not a plain file name	nazwa nie jest zwykłą nazwą pliku
 	Wrote 1 file to {dir}	Zapisano 1 plik w {dir}
 	Wrote {n} files to {dir}	Liczba plików zapisanych w {dir}: {n}
 	No pages match those choices	Żadna strona nie pasuje do wybranych opcji

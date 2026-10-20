@@ -139,7 +139,8 @@ comment menu	Edit	సవరించు
 	Next page	తదుపరి పేజీ
 	Previous page	మునుపటి పేజీ
 	Current page — type a page number or label (such as iv) and press Enter	ప్రస్తుత పేజీ — పేజీ సంఖ్యను లేదా లేబుల్‌ను (iv వంటిది) టైప్ చేసి Enter నొక్కండి
-	Welcome to BMU PDF	BMU PDFకు స్వాగతం
+	Zoom — type a percentage and press Enter	జూమ్ — శాతాన్ని టైప్ చేసి Enter నొక్కండి
+	Welcome to BMU PDF	PdfCraftకు స్వాగతం
 	An open-source PDF workbench — local, private, and scriptable.	ఓపెన్-సోర్స్ PDF వర్క్‌బెంచ్ — మీ కంప్యూటర్‌లోనే నడుస్తుంది, గోప్యంగా ఉంటుంది, స్క్రిప్ట్‌లతో ఆటోమేట్ చేయవచ్చు.
 	Join the ArtCraft community	ArtCraft కమ్యూనిటీలో చేరండి
 	Get help, share feedback and follow development on Discord.	Discordలో సహాయం పొందండి, మీ అభిప్రాయాన్ని పంచుకోండి, అభివృద్ధిని అనుసరించండి.
@@ -1623,6 +1624,7 @@ action wizard	Start	ప్రారంభించు
 	Couldn't use {name}: {e}	{name}ను ఉపయోగించడం సాధ్యం కాలేదు: {e}
 	Couldn't extract pages: {e}	పేజీలను వేరు తీయడం సాధ్యం కాలేదు: {e}
 	Couldn't write {name}: {e}	{name}ను రాయడం సాధ్యం కాలేదు: {e}
+	the name is not a plain file name	పేరు సాధారణ ఫైల్ పేరు కాదు
 	Wrote 1 file to {dir}	{dir}లో 1 ఫైల్ సేవ్ చేయబడింది
 	Wrote {n} files to {dir}	{dir}లో {n} ఫైల్‌లు సేవ్ చేయబడ్డాయి
 	No pages match those choices	ఆ ఎంపికలకు సరిపోయే పేజీలు ఏవీ లేవు
@@ -2181,6 +2183,8 @@ key	Space	స్పేస్
 	Reset page size	పేజీ పరిమాణాన్ని రీసెట్ చేయి
 	Expand all	అన్నీ విస్తరించు
 	Collapse all	అన్నీ ముడుచు
+	Collapse all pages	అన్ని పేజీలను ముడుచు
+	Expand all pages	అన్ని పేజీలను విస్తరించు
 	Remove page	పేజీని తీసివేయి
 	Remove {n} pages	{n} పేజీలను తీసివేయి
 

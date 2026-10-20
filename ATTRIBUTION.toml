@@ -7,7 +7,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Greek UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "0a70657d47597afb5a3d875af4974e2e6c631e9461bf13a942fa0a3cf8bb7556"
+sha256 = "10694dacaa08191d6472d5ec3ed0bbefff76c92dea3af4bfeb26651a37824a81"
 
 # ATTRIBUTION.toml: one entry per asset (AGENTS.md §1). The source of truth for provenance and licences.
 # ATTRIBUTION.md is generated from this file: `cargo xtask assets --write`. Checked by `cargo xtask assets` (part of `xtask ci`).
@@ -30,7 +30,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Simplified Chinese UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "2da44f1a6b663dbd4b49cbda707286b8687d9302d45755864c9f0521a1de95d0"
+sha256 = "ba06c47a299b4342a4856f4160cd39253794b58388149a5fae6d7125c3c71a3e"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/zh-hant.tsv"
@@ -41,7 +41,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Traditional Chinese UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "a9e457602a3bffc6894b987282480db359dc4ad6323c4b2adb6174f8ab399d5b"
+sha256 = "157a4ce3d08ed70f6b6606f0901962d421175f4ce7616b7939667da3613ef593"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/cs.tsv"
@@ -52,7 +52,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Czech UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "f9b1547d478bf4277f8222a1eaf5958c3402c7b5f8f95570188bf8f9fe161070"
+sha256 = "dd48a6a2e170a617fd58c211e2d5a33f9beabe52ee857318a1e7b3b6761d188d"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/pt-br.tsv"
@@ -63,7 +63,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Brazilian Portuguese UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "3847d896da90c6bc4e55fd1f27e8cbd314108b6e3815b404a5bb4f4a4e4aa794"
+sha256 = "a3bdf99d18696426e6d05672f8f669c54c4cddd22f0ae1c7fc30d5493e9b9b3c"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/es.tsv"
@@ -74,7 +74,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Spanish UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "a1b88fb6b95debe577600fafae7cef880b9896c8eecbc6f229f258ff143e1879"
+sha256 = "ed775b33153388dbab1792a37cfd7775714ff885a27f9f115620e63b25a067bb"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/fr.tsv"
@@ -85,7 +85,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "French UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "86051ff3a09113a5f1b978262ddacdfa329efff404ae27c6549ad4b3b65944d5"
+sha256 = "bad742dfc2aa808d4bb1a27465c4b8c344d5de69faa0892d84c89be47d5eb6eb"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/de.tsv"
@@ -96,7 +96,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "German UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "8e5269e6822719ef545ac80f6cc2fe998cd472e5ffd017dafa19410a1c6ee3aa"
+sha256 = "73102c59d2fc58d1b8f221b81a1e100dfc75070ea22081b4be8cfce40a2f6411"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/te.tsv"
@@ -107,7 +107,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Telugu UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "02cdbf5d1b742b52852ba7675f402fc5155c46cfd364d636dd287c17727817e7"
+sha256 = "e3e212ebe7b2b0bb93446fbc51d8f5e4a2fc9a444cb835a2df509e59f55f8ba6"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/it.tsv"
@@ -118,7 +118,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Italian UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "fba008c927daa915b01d504a586a711ddcc8f5e8be7d24a8b267bf094f9562e2"
+sha256 = "a72326cd40f4baabfd33426c9ef5d0937dd4932db498f08fab200a3cdfb15f3a"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/pl.tsv"
@@ -129,7 +129,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Polish UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "e38f4e7e47de91015818f3e55ccaced206e57d0e32676dae53b286c044534422"
+sha256 = "3d8ff9e707f5f90745423d81e558e22bd9f623c0c25ff299a27674411c4b9bc0"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/ru.tsv"
@@ -140,7 +140,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Russian UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "31576cd7ec51346165f76832583e216a1849ccd9315028a423203fcfac4462f9"
+sha256 = "87683b2293790f4804698ec2726c00758e61d7d9fc17dde3beda964d4edf8108"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/hu.tsv"
@@ -151,7 +151,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Hungarian UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "166d84b851ece0084ee3fd51a9e5e72c8f87273b5ab1533f66479b0850065df1"
+sha256 = "1308f25076aaa6d254add4cf881dfbe0905c510e32360fa3cd022886f2c9f3aa"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/bg.tsv"
@@ -162,7 +162,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Bulgarian UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "10306e3ec9a3b7f413a9a9d70ebe9cbc2fff70d4dfaebf2f4903182d5019f33c"
+sha256 = "05e8978a80ec165c3273900f56db020694f3a9bdbc04a197720045fbb5caf6b9"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/kk.tsv"
@@ -173,7 +173,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Kazakh UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "02055e3fff0db7707cf26d286f93faefcc3f52f0b9605e9971315eb235dcc49a"
+sha256 = "5ee83e7413f9d76438fadd933fba17caaaa8f42722240238fa4c0693eb960143"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/ja.tsv"
@@ -184,7 +184,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Japanese UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "7b8ed6e72d2d160a8aeb435fed5a0f2b8d5c5ec9887dcca598269a197bad41b3"
+sha256 = "d4b7bc79b6acc48f76213f3fae81f776eb60c48b22b19ff5f242e54d7236747b"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/uk.tsv"
@@ -195,7 +195,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Ukrainian UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "a05d08d253fe5fef8e1610c6715e9f0e780dc590a0c4e7dae4f4c9cfabaf4724"
+sha256 = "43fd9b4d8e7814a447125b61d8c3272f061055284f5003bcf0d52b01ba2027c0"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/ar.tsv"
@@ -206,7 +206,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Arabic UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "3f58901bb6c3541c0717e5ce19f8cdf04b72f84a0b1e2b155571068feaf80f51"
+sha256 = "2ba88dc7623882265ef48c9b1890d45a3d6cf0de572a30abaaa21bb9212af131"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/tr.tsv"
@@ -217,30 +217,19 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Turkish UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "0700b31d8713ea182ca9a115170bbf3af774e4f8a663b6e27889093d7e0aa31d"
+sha256 = "b609125e2f0c470321938197ce868feb708eefe626cfc4316dd962012ac8ebca"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/lt.tsv"
 title = "Lithuanian interface translation catalog"
 author = "PdfCraft contributors"
-source = "Contributor-original: clean-room translations of PdfCraft's English UI labels and user-facing messages; reviewed by a native Lithuanian-speaking contributor"
+source = "Contributor-original: clean-room translations of PdfCraft's English UI labels and user-facing messages; original catalog reviewed by a native Lithuanian-speaking contributor; 2026-10-15 coverage additions are AI-assisted and not separately native-reviewed"
 licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Lithuanian UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "4e3e62c1d01a00f26586eb575b87dbcbac2979c36cd99ab2a9f20484c58c9aaa"
+sha256 = "d14b6d0e7e44d4302028e517daee27cc29f8d1788059aca52319daf9b70e8e02"
 
-
-[[asset]]
-path = "crates/ui-egui/src/i18n/vi.tsv"
-title = "Vietnamese interface translation catalog"
-author = "PdfCraft contributors"
-source = "Contributor-original: clean-room translations of PdfCraft's English UI labels; PhotoCraft and VectorCraft Vietnamese catalogs used only as translation memory when English source and semantic context matched; reviewed by a native Vietnamese-speaking contributor"
-licence = "MIT OR Apache-2.0"
-licence_file = "LICENSE-MIT"
-kind = "translation"
-usage = "Vietnamese UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "74f959fee5a15f910a42e3b647cf5967401e18e6f6fc742f1c98a075b37bd11b"
 
 [[asset]]
 path = "assets/icons/accessibility.svg"
@@ -2398,7 +2387,7 @@ source = "https://design.ubuntu.com/font"
 licence = "Ubuntu-font-1.0"
 kind = "font"
 usage = "egui fallback fonts (eframe feature default_fonts)"
-sha256 = "80307b8da7649aa4ee4d484b232140e3ce1ec0ca093073d3c53c8f5a5ced7a70"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[bundled]]
 crate = "epaint_default_fonts"
@@ -2410,7 +2399,7 @@ source = "https://github.com/source-foundry/Hack"
 licence = "MIT AND Bitstream-Vera"
 kind = "font"
 usage = "egui fallback fonts (eframe feature default_fonts)"
-sha256 = "15f55cc0c85a2988d2b4b3a8cdb5d77fdfbaf319e1bb5309d725db9818fb7125"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[bundled]]
 crate = "epaint_default_fonts"
@@ -2422,7 +2411,7 @@ source = "https://github.com/googlefonts/noto-emoji"
 licence = "OFL-1.1"
 kind = "font"
 usage = "egui fallback fonts (eframe feature default_fonts)"
-sha256 = "415dc6290378574135b64c808dc640c1df7531973290c4970c51fdeb849cb0c5"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[bundled]]
 crate = "epaint_default_fonts"
@@ -2434,7 +2423,7 @@ source = "https://github.com/jslegers/emoji-icon-font"
 licence = "MIT"
 kind = "font"
 usage = "egui fallback fonts (eframe feature default_fonts)"
-sha256 = "f426bec371f484646d002717e2c555a95cd5145e635d83a48bbef83f3abf18ca"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[bundled]]
 crate = "hayro-cmap"
@@ -2447,7 +2436,7 @@ licence = "BSD-3-Clause"
 kind = "data"
 adobe_data = true
 usage = "Character-code mapping tables required to read CJK PDFs. Non-visual data, allowed by AGENTS.md §1.1"
-sha256 = "ddf37af521d904d5646c2fc37b2b7e912dc1b56f0d210190b61f598154758e46"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[bundled]]
 crate = "hayro-interpret"
@@ -2460,7 +2449,7 @@ licence = "MIT OR Apache-2.0"
 kind = "data"
 adobe_data = true
 usage = "Glyph widths and encodings for non-embedded standard fonts. Non-visual data, allowed by AGENTS.md §1.1"
-sha256 = "2ec9e608573eda459de1e1d9bda3bb494315e36bee885acc88912a11fe0caa41"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "PlayfairDisplay[wght].ttf"
@@ -2473,7 +2462,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "566be814f8e96e93dfa16101331557eb6b5467e9e03f627c0910fe93ca12300e"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "c40f2293766a503bc70cce9e512ef844a4ccb7cbcde792fe2ea31d191917d8d6"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "PlayfairDisplay-Italic[wght].ttf"
@@ -2486,7 +2475,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "566be814f8e96e93dfa16101331557eb6b5467e9e03f627c0910fe93ca12300e"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "a5e26dc5e2e77fb2803a0bf02fd4f81ee136ec8dea863ccdb0c59a263b21378b"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "EBGaramond[wght].ttf"
@@ -2499,7 +2488,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "0985066662eb755ed3683ae5482a81a9195b49ce3f7e165cc2388b3dbece7dd7"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "ef9512f92f6d579e5dc75af59a5a4b1b8b47d2eda89e00b954d44520e5369027"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "EBGaramond-Italic[wght].ttf"
@@ -2512,7 +2501,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "0985066662eb755ed3683ae5482a81a9195b49ce3f7e165cc2388b3dbece7dd7"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "bba2c4499c93c9612b90b9825d32b07da52fce2fe57562a1eb6b833553f93c4e"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "GreatVibes-Regular.ttf"
@@ -2525,7 +2514,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "61093a21f5e63dedf54222b3c09997e54c0fe43e3851d21386e02ddcbc246d49"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "8d509802186f1b51572531ecf313e8098f9a5bfdfaca93f0c9b34467f9982d15"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "STIXTwoMath-Regular.ttf"
@@ -2538,7 +2527,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "0c8825913b60d858aacdb33c4ca6660a7d64b0d6464702efbb19313f5765861a"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "562551b15b836e6e01d1b7350909baf3c8c8d83260c1190fbf4544333e6936de"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "Amiri-Regular.ttf"
@@ -2551,7 +2540,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "72de68e5954f4fdd24702292ef5a32f003ca960ec9330dc86e5eefb5dffb9b22"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "ab391c4147d054c48976e98322ad0eefe1427aa0e0502a12a4c75d80a70cfcd7"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "NotoSansHebrew[wdth,wght].ttf"
@@ -2564,7 +2553,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "9b9fe028b5ba74d231659a1bbaf0ed09b11e759d1ca6a070999e16d151616b47"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "7ef36a2c3593758cdb622e1bdef4f84523e92fbc3ccc667438dd80ff54c2de88"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "NotoSansDevanagari[wdth,wght].ttf"
@@ -2577,7 +2566,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "a216f6f8d85c7228093e0ee5e258d9d377e6671f68acb4db1930b29583d0f331"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "14ec4af41f27482216d1c2229f417ff9b1425e1babb014e57d1d40d03229853e"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "NotoSansThai[wdth,wght].ttf"
@@ -2590,7 +2579,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "2e98fd23a52d253db8612cd5942c8f2ff4111b21d2367050fdca91d8ccc374a0"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "5a1c559bb539583c8a1fd99d1c5b9491e5e14478c9cd2bd0970d5c3096cc9ef8"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "NotoSansArmenian[wdth,wght].ttf"
@@ -2603,7 +2592,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "0468358b316f69f405b55cadf8a8314e16e3610b8feaad96772bd5d968112d02"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "0870908d8318435a5daf1cd280ae15063f990cd9ad60f3e94c734ce9e1ffef71"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "NotoSansGeorgian[wdth,wght].ttf"
@@ -2616,7 +2605,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "8c02263c5d73d40544f9ed91e30c4e947407057a3cc430d7b786189aeceff6df"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "dc591156f36842d38996c4a7a17fee9bb58e45da3e2cac7a31b7d33de700adb9"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "NotoSansTamil[wdth,wght].ttf"
@@ -2629,7 +2618,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "f8ff8ce7d0a81bf8d5e121c635ef027250c531f2fd37d5988b8dd6e45f19d7f1"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "aa3a9b321f4b0bb2c40203ffbde9af89713227866e0e13f76e5b9eeea727cf88"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "CharisSIL-Regular.ttf"
@@ -2642,7 +2631,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "0acda775b4dedaf980821f590206a692779ee495170018ee2b9caf1c50fc136a"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "346337374aa347d64ee015b26d441f1970d8631914e2f3941b00e1c4761e28c5"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "ZCOOLXiaoWei-Regular.ttf"
@@ -2655,7 +2644,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "a094514ca57cf8f9c5e8d8d1adab5d8cd3a377297ff016f9df2c05b3ecd77f0a"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "a42b620140f493db42f741351dfbf343c0936d58588ee8004b8b2a218d997ff1"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "ShipporiMincho-Regular.ttf"
@@ -2668,7 +2657,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "41fba056279be5f45ff9a99e44b7b53897b42732f5806d8e666e0ab49ac6bd38"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "769b5269f0f9bc6534b352c0e6bd856a566e03ff788f107191c2d835863570b2"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "GowunBatang-Regular.ttf"
@@ -2681,7 +2670,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "49a57cc769fa9affd6eefb9070a61e3d3f6b757c97cafb15848bc6d1c81acc78"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "466c593e7147412e748af4856d5ad14709b5a860bdf62b9c2546f2c5874e9849"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "NotoColorEmoji-Regular.ttf"
@@ -2694,7 +2683,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "ac564676d10054a8445923dfc2dfb13c042d97888bd27c1b6ec6dfe89a9d8d62"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "4d82a18d8d95f60ba883ce242bbadbf84a576e987745dd7ba38d71c67cff2d73"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "Inter[opsz,wght].ttf"
@@ -2707,7 +2696,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[fetched]]
 file = "Inter-Italic[opsz,wght].ttf"
@@ -2720,7 +2709,7 @@ licence_url = "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be2725
 licence_sha256 = "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57"
 kind = "font"
 usage = "Showcase PDF (cargo xtask demo-pdf)"
-sha256 = "acd98e64795781b2058f07b18475e0ecee2a0fe2b42a49e2f9e37d0d6bf66ce6"
+sha256 = "f225e0b044875b8fa6375b6b5ad935f0d99fcc1ad03ecf9f0baae2cedbfca4d2"
 
 [[asset]]
 path = "assets/app-icon/pdfcraft.svg"
@@ -3218,7 +3207,7 @@ licence_url = "https://creativecommons.org/licenses/by-sa/4.0/legalcode.txt"
 licence_sha256 = "28a9529c7d0bb4dc51f4bf5c116a3d16ef247a052f7591466768ddf563fd1cf5"
 kind = "model"
 usage = "Scan & OCR: finds words on page images (cargo xtask models)"
-sha256 = "f15cfb56bd02c4bf478a20343986504a1f01e1665c2b3a0ad66340f054b1b5ca"
+sha256 = "f46881724a6621f3686a612a79dbdce4f7dbe9e2025610e44c9a094341334c2c"
 
 [[fetched]]
 file = "text-recognition.rten"
@@ -3231,7 +3220,7 @@ licence_url = "https://creativecommons.org/licenses/by-sa/4.0/legalcode.txt"
 licence_sha256 = "28a9529c7d0bb4dc51f4bf5c116a3d16ef247a052f7591466768ddf563fd1cf5"
 kind = "model"
 usage = "Scan & OCR: reads the words it finds (cargo xtask models)"
-sha256 = "e484866d4cce403175bd8d00b128feb08ab42e208de30e42cd9889d8f1735a6e"
+sha256 = "f46881724a6621f3686a612a79dbdce4f7dbe9e2025610e44c9a094341334c2c"
 
 [[build_input]]
 name = "craft-fonts"
@@ -3267,6 +3256,17 @@ usage = "UI icon, embedded via crates/ui-egui/src/icon_data.rs"
 sha256 = "d1a443233345724859de8e4fb48968ba91e885e12ddbd710701548bd91b39428"
 
 [[asset]]
+path = "crates/ui-egui/src/i18n/vi.tsv"
+title = "Vietnamese interface translation catalog"
+author = "PdfCraft contributors"
+source = "Contributor-original: clean-room translations of PdfCraft's English UI labels; PhotoCraft and VectorCraft Vietnamese catalogs used only as translation memory when English source and semantic context matched; original catalog reviewed by a native Vietnamese-speaking contributor; 2026-10-15 coverage additions are AI-assisted and not separately native-reviewed"
+licence = "MIT OR Apache-2.0"
+licence_file = "LICENSE-MIT"
+kind = "translation"
+usage = "Vietnamese UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
+sha256 = "861cf534f8b19683eb5e170dfac9678b7ef1ddf7005188ae6a08c7274431c7c1"
+
+[[asset]]
 path = "crates/ui-egui/src/i18n/sl.tsv"
 title = "Slovene interface translation catalog"
 author = "PdfCraft contributors"
@@ -3275,9 +3275,10 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Slovene UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "23bdc32b72a2d070004dcf5f852155bbac9c21c577234939af7dc9a9c5d6b452"
+sha256 = "5d89b47a511db00ce9ea9a98e88841606916958daa35549e9f63d1ace8e7a2af"
 
 [[asset]]
+
 path = "vendor/vello_common/assets/probe.png"
 title = "vello_common probe reference image (rendered from probe.rgba)"
 author = "Linebender vello contributors"
