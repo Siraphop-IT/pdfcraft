@@ -74,3 +74,30 @@ pub fn shape(bytes: &[u8], text: &str) -> Result<ShapedRun, String> {
     }
     Ok(ShapedRun { glyphs, advance: x })
 }
+
+/// [`shape`], or for a face without the substitution tables it needs (older Thai faces draw their
+/// marks in place, without them) each character's own glyph and advance from the face's cmap.
+pub fn shape_lenient(bytes: &[u8], text: &str) -> Result<ShapedRun, String> {
+    match shape(bytes, text) {
+        Ok(run) => Ok(run),
+        Err(e) if !e.contains("substitution tables") => Err(e),
+        Err(_) => {
+            use skrifa::MetadataProvider;
+            let face = FontRef::new(bytes).map_err(|e| e.to_string())?;
+            let charmap = face.charmap();
+            let metrics = face.glyph_metrics(skrifa::instance::Size::unscaled(), skrifa::instance::LocationRef::default());
+            let em = f64::from(face.head().map_err(|e| e.to_string())?.units_per_em().max(1));
+            let mut glyphs = Vec::new();
+            let mut x = 0.0;
+            for c in text.chars() {
+                let id = charmap.map(c).filter(|g| g.to_u32() != 0).ok_or_else(|| format!("the font has no glyph for \"{c}\""))?;
+                glyphs.push(ShapedGlyph { id, position: [x, 0.0], text: c.to_string() });
+                x += f64::from(metrics.advance_width(id).unwrap_or(0.0)) / em;
+            }
+            if !x.is_finite() || glyphs.len() > 65_534 {
+                return Err("shaped row exceeds its geometry budget".into());
+            }
+            Ok(ShapedRun { glyphs, advance: x })
+        }
+    }
+}

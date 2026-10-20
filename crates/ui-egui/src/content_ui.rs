@@ -605,15 +605,56 @@ fn finish(cv: &mut ContentView, d: TextDraft, added: &[Added]) -> Option<Edit> {
     }
 }
 
+/// The fonts installed on this machine, Thai ones first: choosing one reads its file and writes
+/// the text in it ([`pdfcraft_engine::TextFont`]). A face that can't be embedded says why.
+#[cfg(not(target_arch = "wasm32"))]
+fn installed_font_choices(ui: &mut egui::Ui, s: &mut AddedText) {
+    let error_id = egui::Id::new("installed-font-error");
+    ui.separator();
+    let Some(fonts) = crate::files::installed_font_files(ui.ctx()) else {
+        ui.label(tl!("Finding document fonts…"));
+        return;
+    };
+    for font in fonts.iter().take(400) {
+        let chosen = s.font.as_ref().is_some_and(|f| f.family == font.family);
+        if ui.selectable_label(chosen, &font.face).clicked() {
+            match std::fs::read(&font.path).map_err(|e| e.to_string()).and_then(|b| pdfcraft_engine::TextFont::new(b).map_err(|e| e.to_string())) {
+                Ok(f) => {
+                    s.font = Some(f);
+                    ui.data_mut(|d| {
+                        d.remove::<String>(error_id);
+                    });
+                }
+                Err(e) => ui.data_mut(|d| {
+                    d.insert_temp(error_id, format!("{}: {e}", font.face));
+                }),
+            }
+        }
+    }
+    if let Some(e) = ui.data(|d| d.get_temp::<String>(error_id)) {
+        ui.label(egui::RichText::new(e).small());
+    }
+}
+
 /// Format text (shown in the Edit panel while a text item is selected, or for new text).
-/// Returns the changed style; for a selected item the caller turns it into an update.
-pub(crate) fn format_panel(ui: &mut egui::Ui, t: &Tokens, style: &AddedText) -> Option<AddedText> {
+/// Returns the changed style; for a selected item the caller turns it into an update. With
+/// `installed_fonts`, the font list also offers the fonts installed on this machine (Thai ones
+/// first), for added text.
+pub(crate) fn format_panel(ui: &mut egui::Ui, t: &Tokens, style: &AddedText, installed_fonts: bool) -> Option<AddedText> {
     let mut s = style.clone();
     widgets::section_title(ui, tl!("Format text"));
     ui.horizontal(|ui| {
-        egui::ComboBox::from_id_salt("font-family").selected_text(s.family.label()).width(110.0).show_ui(ui, |ui| {
+        let shown = s.font.as_ref().map_or_else(|| s.family.label().to_string(), |f| f.family.clone());
+        egui::ComboBox::from_id_salt("font-family").selected_text(shown).width(150.0).height(420.0).show_ui(ui, |ui| {
             for f in [FontFamily::Helvetica, FontFamily::Times, FontFamily::Courier] {
-                ui.selectable_value(&mut s.family, f, f.label());
+                if ui.selectable_label(s.font.is_none() && s.family == f, f.label()).clicked() {
+                    s.family = f;
+                    s.font = None;
+                }
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            if installed_fonts {
+                installed_font_choices(ui, &mut s);
             }
         });
         // A list rather than a drag value: every change is an undo step.

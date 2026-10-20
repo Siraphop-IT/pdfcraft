@@ -65,6 +65,20 @@ fn style(a: &Args, t: &mut AddedText) -> Result<()> {
 }
 
 impl Automation {
+    /// `font_file`: write the text in that TrueType/OpenType file (a path under the root, such as
+    /// an installed Thai face) instead of a standard font.
+    fn font_file(&self, a: &Args, t: &mut AddedText) -> Result<()> {
+        let Some(path) = a.opt_str("font_file")? else { return Ok(()) };
+        let path = self.resolve_for(path, crate::file_access::Access::Read, false)?;
+        let size = std::fs::metadata(&path).map_err(|e| failed(e.to_string()))?.len();
+        if size > 16 << 20 {
+            return Err(bad("font_file exceeds 16 MiB"));
+        }
+        let bytes = std::fs::read(&path).map_err(|e| failed(e.to_string()))?;
+        t.font = Some(pdfcraft_engine::TextFont::new(bytes).map_err(|e| bad(e.to_string()))?);
+        Ok(())
+    }
+
     pub(crate) fn content_list(&self, a: &Args) -> Result<Value> {
         let doc = self.doc(a)?;
         let mut per_page: std::collections::HashMap<usize, usize> = Default::default();
@@ -109,6 +123,7 @@ impl Automation {
         };
         let mut t = AddedText { rect, text: a.str("text")?.to_string(), ..AddedText::default() };
         style(a, &mut t)?;
+        self.font_file(a, &mut t)?;
         let mut out = self.apply(a, Edit::AddText { page, text: t })?;
         out["index"] = json!(self.doc(a)?.added().iter().filter(|x| x.page == page).count());
         Ok(out)
@@ -156,6 +171,7 @@ impl Automation {
                     t.text = s.to_string();
                 }
                 style(a, t)?;
+                self.font_file(a, t)?;
                 if ["rotate", "flip_h", "flip_v", "crop", "image"].iter().any(|k| a.get(k).is_some()) {
                     return Err(bad("rotate, flip, crop and image apply to images"));
                 }

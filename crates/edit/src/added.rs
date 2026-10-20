@@ -9,6 +9,7 @@
 //! `/UserUnit` it was written for.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use pdfcraft_cos::{Dict, Document, ObjRef, Object, PdfString, Stream};
 use pdfcraft_fonts::{
@@ -116,6 +117,41 @@ pub struct AddedText {
     pub size: f64,
     pub color: [f64; 3],
     pub align: Align,
+    /// A font file the text is written in instead of `family` (Thai faces such as TH Sarabun New
+    /// or Angsana New); `bold` and `italic` then come from the face itself.
+    pub font: Option<TextFont>,
+}
+
+/// A TrueType/OpenType face added text is written in, usually one installed on this machine. Its
+/// whole program is embedded in the PDF, and the text is shaped with the face's own OpenType
+/// tables, so Thai vowels and tone marks sit where the face puts them.
+#[derive(Clone, Debug)]
+pub struct TextFont {
+    /// The face's family name (from its name table).
+    pub family: String,
+    pub bytes: Arc<Vec<u8>>,
+}
+
+impl PartialEq for TextFont {
+    fn eq(&self, other: &Self) -> bool {
+        self.family == other.family && (Arc::ptr_eq(&self.bytes, &other.bytes) || self.bytes == other.bytes)
+    }
+}
+
+impl TextFont {
+    /// The face in `bytes`, if it can be embedded (its embedding permissions allow it, and it is a
+    /// standalone, static TrueType/OpenType face; see [`pdfcraft_fonts::embedding::validate`]).
+    pub fn new(bytes: Vec<u8>) -> Result<TextFont, EditError> {
+        pdfcraft_fonts::embedding::validate(&bytes).map_err(EditError::Invalid)?;
+        pdfcraft_fonts::embedding::validate_document_input(&bytes).map_err(EditError::Invalid)?;
+        let (family, _) = pdfcraft_fonts::embedding::names(&bytes).map_err(EditError::Invalid)?;
+        Ok(TextFont { family, bytes: Arc::new(bytes) })
+    }
+
+    /// The width of `s` at `size` points (0 if the face can't draw it; validation says why).
+    fn width(&self, s: &str, size: f64) -> f64 {
+        pdfcraft_fonts::source_shaping::shape_lenient(&self.bytes, s).map_or(0.0, |r| r.advance * size)
+    }
 }
 
 impl Default for AddedText {
@@ -129,6 +165,7 @@ impl Default for AddedText {
             size: 12.0,
             color: [0.0; 3],
             align: Align::Left,
+            font: None,
         }
     }
 }
@@ -241,6 +278,10 @@ fn wrapped(t: &AddedText) -> Vec<(String, bool)> {
     let width = (t.rect[2] - t.rect[0]).max(t.size);
     let mut out = Vec::new();
     for para in t.text.split('\n') {
+        if let Some(font) = &t.font {
+            out.extend(font_lines(t, font, para, width).into_iter().map(|line| (line, false)));
+            continue;
+        }
         // Arabic or Hebrew: laid out with the bidirectional algorithm and shaped.
         let rtl_script = para.chars().any(|c| is_arabic(c) || is_hebrew(c));
         let thai = para.chars().any(is_thai);
@@ -306,6 +347,56 @@ fn thai_lines(t: &AddedText, para: &str, width: f64) -> Result<Vec<String>, Edit
     Ok(lines)
 }
 
+/// A paragraph in a chosen face, wrapped to `width`: at spaces, and a word wider than the box
+/// between its clusters (a Thai vowel or tone mark stays with its letter). Thai has no spaces
+/// between words, so a Thai line breaks where the box ends; this is not dictionary-based Thai
+/// word segmentation.
+fn font_lines(t: &AddedText, font: &TextFont, para: &str, width: f64) -> Vec<String> {
+    let fits = |s: &str| font.width(s, t.size) <= width;
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    for word in para.split(' ') {
+        let candidate = if line.is_empty() { word.to_string() } else { format!("{line} {word}") };
+        if fits(&candidate) {
+            line = candidate;
+            continue;
+        }
+        if !line.is_empty() {
+            lines.push(std::mem::take(&mut line));
+        }
+        if fits(word) {
+            line = word.to_string();
+            continue;
+        }
+        // Too wide on its own: break between clusters.
+        let mut cluster = String::new();
+        let mut clusters = Vec::new();
+        for c in word.chars() {
+            if !cluster.is_empty() && !combining(c) {
+                clusters.push(std::mem::take(&mut cluster));
+            }
+            cluster.push(c);
+        }
+        clusters.push(cluster);
+        for cluster in clusters {
+            let candidate = format!("{line}{cluster}");
+            if !line.is_empty() && !fits(&candidate) {
+                lines.push(std::mem::replace(&mut line, cluster));
+            } else {
+                line = candidate;
+            }
+        }
+    }
+    lines.push(line);
+    lines
+}
+
+/// A mark drawn over or under the letter before it: Thai vowels and tone marks, and Latin
+/// combining accents.
+fn combining(c: char) -> bool {
+    matches!(u32::from(c), 0x0E31 | 0x0E34..=0x0E3A | 0x0E47..=0x0E4E | 0x0300..=0x036F)
+}
+
 fn is_thai(c: char) -> bool {
     matches!(u32::from(c), 0x0E00..=0x0E7F)
 }
@@ -327,6 +418,9 @@ fn is_hebrew(c: char) -> bool {
 /// draw (or that has no face to draw it). Page-content tools refuse such text; the Add-text editor
 /// keeps it open.
 pub fn first_undrawable(t: &AddedText) -> Option<char> {
+    if let Some(font) = &t.font {
+        return t.text.chars().filter(|c| !matches!(c, '\n' | '\r')).find(|c| !pdfcraft_fonts::embedding::covers(&font.bytes, &c.to_string()));
+    }
     if t.text.chars().any(is_thai) {
         if let Some(c) = t.text.chars().find(|c| is_thai(*c) && !pdfcraft_fonts::thai_has(*c)) {
             return Some(c);
@@ -461,6 +555,9 @@ fn shaped_layout(t: &AddedText, line: &str, rtl: bool) -> Result<(Vec<Piece>, f6
 /// The width of `s` in a shaped-text item; the item's font's estimate if it can't be shaped (drawing
 /// then reports why).
 fn shaped_width(t: &AddedText, s: &str, rtl: bool) -> f64 {
+    if let Some(font) = &t.font {
+        return font.width(s, t.size);
+    }
     shaped_layout(t, s, rtl).map(|(_, w)| w).unwrap_or_else(|_| t.family.width(s, t.size, t.bold, t.italic))
 }
 
@@ -766,6 +863,13 @@ fn draw(doc: &mut Document, c: &Content, view: [f64; 6], taken: &Dict, existing:
             }
             let mut fonts = Dict::new();
             fonts.set(name.clone().into_bytes(), Object::Dict(font));
+            if let Some(font) = &t.font {
+                let mut fonts = Dict::new();
+                draw_in_font(doc, t, font, taken, &mut fonts, &mut out)?;
+                res.set(b"Font".to_vec(), Object::Dict(fonts));
+                out.extend_from_slice(b"Q\n");
+                return Ok((out, res));
+            }
             let face_or_new = |has: fn(char) -> bool, face: bool| t.text.chars().any(has) && (face || !existing);
             if t.text.chars().any(is_thai)
                 || face_or_new(is_arabic, pdfcraft_fonts::document_arabic_font().is_some())
@@ -833,6 +937,54 @@ fn draw(doc: &mut Document, c: &Content, view: [f64; 6], taken: &Dict, existing:
     Ok((out, res))
 }
 
+/// Draw `t` in its chosen face: each line shaped with the face's own tables and embedded with
+/// exactly the glyphs it uses (a Type 0 font over the whole program, ToUnicode from the text), so
+/// it searches and copies as the text typed. New font names avoid the page's (`taken`).
+fn draw_in_font(doc: &mut Document, t: &AddedText, font: &TextFont, taken: &Dict, fonts: &mut Dict, out: &mut Vec<u8>) -> Result<(), EditError> {
+    let r = text_rect(t);
+    let [cr, cg, cb] = t.color.map(|v| v.clamp(0.0, 1.0));
+    out.extend(format!("BT {} {} {} rg\n", n(cr), n(cg), n(cb)).bytes());
+    let mut names = taken.clone();
+    for (i, line) in lines(t).iter().enumerate() {
+        if line.is_empty() {
+            continue;
+        }
+        let run = pdfcraft_fonts::source_shaping::shape_lenient(&font.bytes, line).map_err(EditError::Invalid)?;
+        let mappings: Vec<_> = run.glyphs.iter().map(|g| (g.text.clone(), g.id)).collect();
+        let resource = pdfcraft_fonts::embedding::embed_mapping(doc, &mut names, &font.bytes, &font.family, &mappings).map_err(EditError::Invalid)?;
+        if let Some(f) = names.get(resource.as_bytes()) {
+            fonts.set(resource.as_bytes().to_vec(), f.clone());
+        }
+        let w = run.advance * t.size;
+        let x = match t.align {
+            Align::Left | Align::Justify => r[0],
+            Align::Center => r[0] + ((r[2] - r[0]) - w) / 2.0,
+            Align::Right => r[2] - w,
+        };
+        // Baseline: as for the standard fonts.
+        let y = r[3] - (i as f64 * 1.2 + 0.95) * t.size;
+        out.extend(format!("/{resource} {} Tf\n", n(t.size)).bytes());
+        // `embed_mapping` numbers the glyphs 1, 2, … in the order given.
+        for (cid, g) in (1u32..).zip(&run.glyphs) {
+            let (gx, gy) = (x + g.position[0] * t.size, y + g.position[1] * t.size);
+            out.extend(format!("1 0 0 1 {} {} Tm <{cid:04X}> Tj\n", n(gx), n(gy)).bytes());
+        }
+    }
+    out.extend_from_slice(b"ET\n");
+    Ok(())
+}
+
+/// The font program a chosen face was embedded with, from the item's font resources.
+fn embedded_program(doc: &Document, res: &Dict) -> Option<ObjRef> {
+    let fonts = res.get(b"Font").and_then(Object::as_dict)?;
+    fonts.iter().find_map(|(_, f)| {
+        let top = doc.dict(f)?;
+        let descendant = top.get(b"DescendantFonts").map(|d| doc.resolve(d)).and_then(|d| d.as_array().and_then(|a| a.first().cloned()))?;
+        let descriptor = doc.dict(&descendant)?.get(b"FontDescriptor").and_then(|d| doc.dict(d))?;
+        descriptor.get(b"FontFile2").or_else(|| descriptor.get(b"FontFile3")).and_then(Object::as_ref)
+    })
+}
+
 fn params(c: &Content) -> Dict {
     let mut d = Dict::new();
     let arr = |v: &[f64]| Object::Array(v.iter().map(|x| Object::Real(*x)).collect());
@@ -875,6 +1027,18 @@ fn params(c: &Content) -> Dict {
     d
 }
 
+/// The face an item was written in, read back from the program it embedded (`/FontProgram`).
+fn chosen_font(doc: &Document, d: &Dict) -> Option<TextFont> {
+    let program = d.get(b"FontProgram")?.as_ref()?;
+    let Object::Stream(s) = &*doc.get(program) else { return None };
+    let bytes = s.decoded().ok()?;
+    if bytes.len() > 16 << 20 {
+        return None;
+    }
+    let family = d.get(b"FontFamily").and_then(|f| doc.resolve(f).as_string().map(|s| s.to_text()))?;
+    Some(TextFont { family, bytes: Arc::new(bytes.to_vec()) })
+}
+
 fn parse(doc: &Document, d: &Dict) -> Option<Content> {
     let r = nums(doc, d.get(b"Rect"));
     let rect: [f64; 4] = r.try_into().ok()?;
@@ -896,6 +1060,7 @@ fn parse(doc: &Document, d: &Dict) -> Option<Content> {
                     Some(3) => Align::Justify,
                     _ => Align::Left,
                 },
+                font: chosen_font(doc, d),
             }))
         }
         b"Image" => {
@@ -999,6 +1164,12 @@ fn validate(c: &Content) -> Result<(), EditError> {
             if (r[2] - r[0]).abs() < 1.0 {
                 return Err(EditError::Invalid("the text box is too narrow".into()));
             }
+            if let Some(font) = &t.font {
+                if let Some(c) = first_undrawable(t) {
+                    return Err(EditError::Invalid(format!("{} has no glyph for \"{c}\" (U+{:04X})", font.family, u32::from(c))));
+                }
+                return Ok(());
+            }
             if t.text.chars().any(is_thai) && pdfcraft_fonts::document_thai_font().is_none() {
                 return Err(thai_error(GlyphError::NoFont, &t.text));
             }
@@ -1053,6 +1224,12 @@ fn write(doc: &mut Document, page: usize, c: &Content, obj: Option<ObjRef>) -> R
     let mut sd = Dict::new();
     sd.set(b"PCMark".to_vec(), Object::name(TAG));
     let mut added = params(c);
+    if let Content::Text(AddedText { font: Some(font), .. }) = c
+        && let Some(program) = embedded_program(doc, &res)
+    {
+        added.set(b"FontProgram".to_vec(), Object::Ref(program));
+        added.set(b"FontFamily".to_vec(), PdfString::text(&font.family));
+    }
     if user_unit != 1.0 {
         added.set(b"UserUnit".to_vec(), Object::Real(user_unit));
     }
