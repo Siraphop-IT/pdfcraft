@@ -1,11 +1,14 @@
-PdfCraft
-Copyright (c) 2026 ArtCraft Team and the PdfCraft contributors.
+BMU PDF
+Modifications (BMU branding) copyright (c) 2026 BMU.
+
+BMU PDF is a modified version of PdfCraft (https://github.com/storytold/pdfcraft).
+PdfCraft: Copyright (c) 2026 ArtCraft Team and the PdfCraft contributors.
 Licensed under the MIT License or the Apache License, Version 2.0, at your option
 (LICENSE-MIT, LICENSE-APACHE).
 
-The ArtCraft name, wordmark and logos in docs/brand/ are trademarks of the ArtCraft Team. They are
-not open source and are not covered by the license above; their terms are in
-docs/brand/LICENSE-brand.txt.
+The ArtCraft name, wordmark and logos are trademarks of the ArtCraft Team. As their terms
+(docs/brand/LICENSE-brand.txt) require of modified versions, BMU PDF does not include them. BMU PDF
+is not made or endorsed by the ArtCraft Team or the PdfCraft project.
 
 Third-party material
 

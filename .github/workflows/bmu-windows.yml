@@ -1,0 +1,34 @@
+name: BMU PDF for Windows
+
+# Builds the BMU PDF installer (.msi) and portable .zip on a Windows runner, unsigned, and
+# uploads them as a workflow artifact. Run it by hand: Actions > BMU PDF for Windows > Run workflow.
+# Self-contained: it does not use storytold/craft-common-actions.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: rustup show
+      - name: WiX v5
+        run: dotnet tool install --global wix --version 5.0.2
+      - name: Build and package
+        shell: pwsh
+        env:
+          PDFCRAFT_REQUIRE_WINRES: "1"
+        run: pwsh packaging/windows/package.ps1 -Arch x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bmu-pdf-windows-x64
+          path: |
+            dist/release/*.msi
+            dist/release/*.zip
+          if-no-files-found: error

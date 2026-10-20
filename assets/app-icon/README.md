@@ -1,28 +1,25 @@
-# PdfCraft app icon
+# BMU PDF app icon
 
-<img src="pdfcraft-small.svg" alt="PdfCraft app icon: an engraved lion's head on green" width="128">
+<img src="pdfcraft-small.svg" alt="BMU PDF app icon: a paper document lettered BMU on navy" width="128">
 
-**Creature:** a lion, in a frontal head-and-shoulders portrait, mane running off the bottom of the tile.
-
-**Style:** an engraving (woodcut-weight line work) portrait in the Crafting Apps "owl template" framing:
-a full-bleed colour field, no frame or roundel, the animal looking at the viewer and filling the tile.
-
-**Palette:** exactly three colours.
+**Design:** a paper document with a folded corner on a navy field, lettered **BMU** in block capitals
+drawn as strokes (no font), with a gold rule above and two text lines below.
 
 | Colour | Hex | Used for |
 |---|---|---|
-| Ink | `#0b0b0c` | line work and the figure's contour |
-| Paper | `#efe9dc` | the figure (the lion's silhouette) |
-| PdfCraft green (app colour) | `#12a58a` | the full-bleed field |
+| BMU navy (app colour) | `#1d3a6e` | the full-bleed field and the lettering |
+| Paper | `#f4f1ea` | the document |
+| Fold | `#c9d4e6` | the folded corner |
+| Gold | `#e0a526` | the rule above the lettering |
+| Line blue | `#9fb3d1` | the text lines |
 
 **Tile:** `viewBox="0 0 512 512"`, a rounded square with `rx=112` that clips everything. Windows and Linux
 icons use the full-bleed tile. macOS icons put it on Apple's grid (an 824 px body centred on a transparent
-1024 px canvas).
+1024 px canvas). File names keep the upstream `pdfcraft` prefix so the build scripts need no change.
 
-**Provenance:** the project owner's original drawing, made in ArtCraft (2880 px, keyed to the palette), then
-vectorised with craftrules `assets/logo-options/_tools/vectorize_tile.py` (potrace; no filtering or
-warping). The source drawing is kept in craftrules at `assets/app-icons/pdfcraft/source.png`, not here.
-Licence: [LICENSE.txt](LICENSE.txt) (`MIT OR Apache-2.0`, like the repo).
+**Provenance:** original artwork drawn for BMU PDF as hand-written SVG on 2026-10-16 (it replaces PdfCraft's
+lion icon, which belongs to the upstream project). Every raster is rendered from `pdfcraft.svg` by
+`packaging/icons.sh`. Licence: [LICENSE.txt](LICENSE.txt) (`MIT OR Apache-2.0`, like the repo).
 
 ## Files
 
