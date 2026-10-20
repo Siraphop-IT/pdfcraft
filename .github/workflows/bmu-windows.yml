@@ -27,7 +27,16 @@ jobs:
         shell: pwsh
         env:
           PDFCRAFT_REQUIRE_WINRES: "1"
-        run: pwsh packaging/windows/package.ps1 -Arch x64
+        # The log is only readable with admin rights; on failure its tail also goes into an
+        # annotation, which anyone who can see the run can read.
+        run: |
+          pwsh packaging/windows/package.ps1 -Arch x64 *>&1 | Tee-Object -FilePath package.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $tail = (Get-Content package.log -Tail 30 | ForEach-Object { $_ -replace '%', '%25' -replace '\r', '' }) -join '%0A'
+            Write-Output "::error title=package.ps1 failed::$tail"
+            exit $code
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: bmu-pdf-windows-x64
