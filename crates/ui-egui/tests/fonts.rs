@@ -197,9 +197,12 @@ fn system_fallback_covers_telugu() {
 /// and Sinhala and Tamil text, such as a file name, has glyphs instead of boxes (#1688). macOS
 /// always ships Sinhala Sangam MN and Tamil Sangam MN, so there the test never skips.
 #[test]
-fn system_fallback_covers_sinhala_and_tamil() {
-    for (name, text) in [(theme::SYSTEM_SINHALA_FALLBACK, "ශ්‍රී ලංකා ගොනුව"), (theme::SYSTEM_TAMIL_FALLBACK, "தமிழ் கோப்பு")]
-    {
+fn system_fallback_covers_sinhala_tamil_and_thai() {
+    for (name, text) in [
+        (theme::SYSTEM_SINHALA_FALLBACK, "ශ්‍රී ලංකා ගොනුව"),
+        (theme::SYSTEM_TAMIL_FALLBACK, "தமிழ் கோப்பு"),
+        (theme::SYSTEM_THAI_FALLBACK, "บันทึกไฟล์ที่เปิดอยู่"),
+    ] {
         assert!(!theme::font_definitions().font_data.contains_key(name));
         let defs = theme::installed_font_definitions(theme::CjkPreference::Default);
         let off = std::env::var_os("PDFCRAFT_SYSTEM_FONTS").is_some_and(|v| v == "0");

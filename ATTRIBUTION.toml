@@ -3267,6 +3267,17 @@ usage = "Vietnamese UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
 sha256 = "861cf534f8b19683eb5e170dfac9678b7ef1ddf7005188ae6a08c7274431c7c1"
 
 [[asset]]
+path = "crates/ui-egui/src/i18n/th.tsv"
+title = "Thai interface translation catalog"
+author = "BMU PDF contributors"
+source = "Contributor-original: translations of PdfCraft's English UI labels made for BMU PDF on 2026-10-20; AI-assisted and not yet reviewed by a native Thai-speaking contributor"
+licence = "MIT OR Apache-2.0"
+licence_file = "LICENSE-MIT"
+kind = "translation"
+usage = "Thai UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
+sha256 = "12bf0d1219b300df90568a148e9031fe6ada824c4ced0a5e53e683c8902393d3"
+
+[[asset]]
 path = "crates/ui-egui/src/i18n/sl.tsv"
 title = "Slovene interface translation catalog"
 author = "PdfCraft contributors"

@@ -56,7 +56,7 @@ const AR_DAYS: [&str; 7] = ["الأحد", "الاثنين", "الثلاثاء", 
 
 /// The languages month and weekday names can be written in (Preferences ▸ Date format ▸ Language):
 /// the interface languages, in the same order and with the same names.
-pub static DATE_LANGUAGES: [DateLanguage; 23] = [
+pub static DATE_LANGUAGES: [DateLanguage; 24] = [
     DateLanguage {
         code: "en",
         name: "English",
@@ -397,6 +397,17 @@ pub static DATE_LANGUAGES: [DateLanguage; 23] = [
         months_short: ["Thg 1", "Thg 2", "Thg 3", "Thg 4", "Thg 5", "Thg 6", "Thg 7", "Thg 8", "Thg 9", "Thg 10", "Thg 11", "Thg 12"],
         days: ["Chủ Nhật", "Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy"],
         days_short: ["CN", "T2", "T3", "T4", "T5", "T6", "T7"],
+    },
+    // Thai: the year stays Gregorian (`yyyy` is not the Buddhist era). Fill & Sign refuses any
+    // format that spells a Thai name, as for the other non-WinAnsi languages.
+    DateLanguage {
+        code: "th",
+        name: "ไทย",
+        months: ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"],
+        months_with_day: None,
+        months_short: ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."],
+        days: ["วันอาทิตย์", "วันจันทร์", "วันอังคาร", "วันพุธ", "วันพฤหัสบดี", "วันศุกร์", "วันเสาร์"],
+        days_short: ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."],
     },
 ];
 
@@ -758,6 +769,19 @@ mod tests {
         let e = s.today_text_for_pdf(Some("dddd d mmmm yyyy"), Some("vi")).unwrap_err();
         assert!(e.contains("can't be written into the PDF yet") && e.contains("dd.mm.yyyy"), "{e}");
         assert!(s.today_text_for_pdf(Some("dd.mm.yyyy"), Some("vi")).is_ok());
+    }
+
+    #[test]
+    fn thai_month_and_weekday_names() {
+        let mut s = Session::new().with_clock(|| 1_700_000_000);
+        s.set_date_language(Some("th")).unwrap();
+        assert_eq!(s.date_language(), Some("th"));
+        s.set_date_format("d mmmm yyyy").unwrap();
+        assert_eq!(s.today_text(None, None).as_deref(), Ok("14 พฤศจิกายน 2023"));
+        s.set_date_format("dddd, d mmm yyyy").unwrap();
+        assert_eq!(s.today_text(None, None).as_deref(), Ok("วันอังคาร, 14 พ.ย. 2023"));
+        assert!(s.today_text_for_pdf(Some("d mmmm yyyy"), Some("th")).is_err(), "Thai is not WinAnsi");
+        assert!(s.today_text_for_pdf(Some("dd.mm.yyyy"), Some("th")).is_ok());
     }
 
     #[test]

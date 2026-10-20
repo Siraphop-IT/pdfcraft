@@ -19,7 +19,7 @@ fn harness(setup: impl FnOnce(&mut PdfCraftApp) + 'static) -> Harness<'static, P
 
 #[test]
 fn no_artcraft_or_discord_links() {
-    let mut h = harness(|_| {});
+    let h = harness(|_| {});
     assert!(h.query_by_label("Discord").is_none(), "no Discord button in the top bar");
     assert!(h.query_by_label_contains("ArtCraft").is_none(), "no ArtCraft card on the home screen");
     h.get_by_label("Welcome to BMU PDF");

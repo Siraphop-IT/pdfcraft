@@ -147,7 +147,7 @@ fn plural_sl(n: u64) -> usize {
 }
 
 /// The registry. English first: it is the fallback and the source language.
-pub static LANGUAGES: [LangInfo; 23] = [
+pub static LANGUAGES: [LangInfo; 24] = [
     LangInfo { code: "en", name: "English", source: "", plural: plural_one_other, rtl: false, catalog: OnceLock::new() },
     LangInfo { code: "ja", name: "日本語", source: include_str!("ja.tsv"), plural: plural_none, rtl: false, catalog: OnceLock::new() },
     // Simplified Chinese; `zh`, `zh-CN`, `zh-SG` and `zh-Hans-*` locales resolve here (see `candidates`).
@@ -210,6 +210,10 @@ pub static LANGUAGES: [LangInfo; 23] = [
     // Vietnamese; every `vi-*` locale (`vi-VN`, `vi_VN.UTF-8`) resolves here. CLDR `vi` counts have
     // one form ("other"), so `@plural` entries list a single form.
     LangInfo { code: "vi", name: "Tiếng Việt", source: include_str!("vi.tsv"), plural: plural_none, rtl: false, catalog: OnceLock::new() },
+    // Thai; every `th-*` locale (`th-TH`, `th_TH.UTF-8`) resolves here. CLDR `th` counts have one
+    // form ("other"), so `@plural` entries list a single form. Drawn with an installed Thai face
+    // (system_fonts::thai_fallback) or the craft-fonts Thai face.
+    LangInfo { code: "th", name: "ไทย", source: include_str!("th.tsv"), plural: plural_none, rtl: false, catalog: OnceLock::new() },
 ];
 
 impl LangInfo {
@@ -2406,6 +2410,34 @@ mod tests {
         assert_eq!(restored.language, "vi");
         assert!(restored.set_option("language", "xx").is_err());
         assert_eq!(restored.language, "vi");
+    }
+
+    #[test]
+    fn thai_is_registered_and_persists() {
+        let th = Lang::from_code("th").expect("th registered");
+        assert_eq!(th.name(), "ไทย");
+        assert_eq!(normalize_pref("TH"), Some("th"));
+        for tag in ["th", "th-TH", "th_TH.UTF-8", "TH-th"] {
+            assert_eq!(lang_from_tag(tag), Some(th), "{tag}");
+        }
+        assert_eq!(first_supported("th-TH\r\nen-US"), Some(th));
+        assert_eq!(tr(th, "File"), "ไฟล์");
+        assert_eq!(tr(th, "Edit"), "แก้ไข");
+        assert_eq!(tr(th, "Save"), "บันทึก");
+        assert_eq!(tr(th, "Save as…"), "บันทึกเป็น…");
+        assert_eq!(tr(th, "Bookmarks"), "บุ๊กมาร์ก");
+        assert_eq!(tr(th, "Fill & Sign"), "กรอกและลงนาม");
+        assert_eq!((0..=3).map(|n| (th.0.plural)(n)).collect::<Vec<_>>(), [0, 0, 0, 0]);
+        for n in [0, 1, 2, 5] {
+            assert_eq!(trn(th, n, "{n} page", "{n} pages"), format!("{n} หน้า"));
+            assert_eq!(trn(th, n, "{n} field", "{n} fields"), format!("{n} ฟิลด์"));
+        }
+        let mut app = crate::PdfCraftApp::default();
+        app.set_option("language", "th").unwrap();
+        assert_eq!(app.language, "th");
+        let mut restored = crate::PdfCraftApp::default();
+        restored.restore(&app.persist());
+        assert_eq!(restored.language, "th");
     }
 
     #[test]
