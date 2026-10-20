@@ -1,10 +1,13 @@
 name: BMU PDF for Windows
 
 # Builds the BMU PDF installer (.msi) and portable .zip on a Windows runner, unsigned, and
-# uploads them as a workflow artifact. Run it by hand: Actions > BMU PDF for Windows > Run workflow.
+# uploads them as a workflow artifact. It runs on every push to bmu/rebrand; once this file is on
+# the default branch it can also be run by hand: Actions > BMU PDF for Windows > Run workflow.
 # Self-contained: it does not use storytold/craft-common-actions.
 
 on:
+  push:
+    branches: [bmu/rebrand]
   workflow_dispatch:
 
 permissions:
