@@ -231,17 +231,18 @@ impl PdfCraftApp {
             let [x0, y0, x1, y1] = i.visible_rect.unwrap_or(i.rect);
             page_area > 0.0 && ((x1 - x0) * (y1 - y0)).abs() >= 0.5 * page_area
         });
-        if !covered || !pdfcraft_engine::ocr::available() {
-            self.views[vi].auto_ocr_skipped.insert(page, generation);
-            return;
-        }
-        self.views[vi].auto_ocr_tried.insert(page);
         // Only a page with no text of its own is read. Comments and text boxes over the picture do
         // not count as its text (a scan with a few comments is still a scan, as in Acrobat), but
         // a page with real text and a background picture is left alone.
         let mut settings = self.ocr_draft.settings();
         settings.skip_text_pages = true;
         settings.native_text_only = true;
+        // The dialog's language (Thai through Windows' recogniser, say), not only the models'.
+        if !covered || !pdfcraft_engine::ocr::available_for(&settings.language) {
+            self.views[vi].auto_ocr_skipped.insert(page, generation);
+            return;
+        }
+        self.views[vi].auto_ocr_tried.insert(page);
         self.start_ocr_pages(id, &[page], settings, true);
     }
 
