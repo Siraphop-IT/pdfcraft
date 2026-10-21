@@ -318,8 +318,11 @@ fn wrapped(t: &AddedText) -> Vec<(String, bool)> {
     out
 }
 
-/// Thai wrapping at shaped cluster boundaries never detaches a tone/vowel mark from its base.
-/// This is glyph-safe wrapping, not dictionary-based Thai word segmentation.
+/// Thai wrapping: a row ends before a word that would overflow it, the words found by the
+/// dictionary ([`crate::linebreak`]) inside runs without spaces and at the spaces between them. The
+/// spaces where a row ends are dropped, as in the Latin wrapper. Only a word wider than the row is
+/// broken inside, at shaped cluster boundaries, which never detach a tone or vowel mark from its
+/// base.
 fn thai_lines(t: &AddedText, para: &str, width: f64) -> Result<Vec<String>, EditError> {
     let (pieces, _) = shaped_layout(t, para, false)?;
     let mut atoms = Vec::new();
@@ -333,68 +336,108 @@ fn thai_lines(t: &AddedText, para: &str, width: f64) -> Result<Vec<String>, Edit
             })),
         }
     }
-    let mut lines = Vec::new();
-    let (mut line, mut used) = (String::new(), 0.0);
-    for (text, advance) in atoms {
-        if !line.is_empty() && used + advance > width {
-            lines.push(std::mem::take(&mut line));
-            used = 0.0;
-        }
-        line.push_str(&text);
-        used += advance;
-    }
-    lines.push(line);
-    Ok(lines)
+    Ok(wrap_words(thai_words(atoms), width))
 }
 
-/// A paragraph in a chosen face, wrapped to `width`: at spaces, and a word wider than the box
-/// between its clusters (a Thai vowel or tone mark stays with its letter). Thai has no spaces
-/// between words, so a Thai line breaks where the box ends; this is not dictionary-based Thai
-/// word segmentation.
-fn font_lines(t: &AddedText, font: &TextFont, para: &str, width: f64) -> Vec<String> {
-    let fits = |s: &str| font.width(s, t.size) <= width;
-    let mut lines = Vec::new();
-    let mut line = String::new();
-    for word in para.split(' ') {
-        let candidate = if line.is_empty() { word.to_string() } else { format!("{line} {word}") };
-        if fits(&candidate) {
-            line = candidate;
-            continue;
+/// Rows of `words` (clusters with their advances, from [`thai_words`]) no wider than `width`.
+fn wrap_words(words: Vec<Vec<(String, f64)>>, width: f64) -> Vec<String> {
+    let blank = |s: &str| s.chars().all(char::is_whitespace);
+    let mut lines: Vec<String> = Vec::new();
+    let (mut line, mut used) = (String::new(), 0.0);
+    let end_row = |lines: &mut Vec<String>, line: &mut String| {
+        let done = std::mem::take(line);
+        lines.push(done.trim_end().to_string());
+    };
+    for word in words {
+        // The word's own width: the spaces after it may hang past the row's end.
+        let ink: f64 = word.iter().filter(|(s, _)| !blank(s)).map(|(_, w)| w).sum();
+        // A row holding only the spaces that open the paragraph has nothing to end yet.
+        if !blank(&line) && used + ink > width {
+            end_row(&mut lines, &mut line);
+            used = 0.0;
         }
-        if !line.is_empty() {
-            lines.push(std::mem::take(&mut line));
-        }
-        if fits(word) {
-            line = word.to_string();
-            continue;
-        }
-        // Too wide on its own: break between clusters.
-        let mut cluster = String::new();
-        let mut clusters = Vec::new();
-        for c in word.chars() {
-            if !cluster.is_empty() && !combining(c) {
-                clusters.push(std::mem::take(&mut cluster));
+        // Too wide for what is left of the row, counting the spaces that open the paragraph.
+        let too_wide = blank(&line) && used + ink > width;
+        for (text, advance) in word {
+            if too_wide && !blank(&line) && !blank(&text) && used + advance > width {
+                end_row(&mut lines, &mut line);
+                used = 0.0;
             }
-            cluster.push(c);
-        }
-        clusters.push(cluster);
-        for cluster in clusters {
-            let candidate = format!("{line}{cluster}");
-            if !line.is_empty() && !fits(&candidate) {
-                lines.push(std::mem::replace(&mut line, cluster));
-            } else {
-                line = candidate;
+            // A row after a wrap does not begin with the spaces where the last one ended.
+            if line.is_empty() && !lines.is_empty() && blank(&text) {
+                continue;
             }
+            line.push_str(&text);
+            used += advance;
         }
     }
     lines.push(line);
     lines
 }
 
+/// A paragraph in a chosen face, wrapped to `width` like Thai in the bundled face
+/// ([`wrap_words`]): rows end at spaces and between dictionary words, and only a word wider than
+/// the row breaks inside, between clusters (a Thai vowel or tone mark stays with its letter).
+fn font_lines(t: &AddedText, font: &TextFont, para: &str, width: f64) -> Vec<String> {
+    let mut atoms: Vec<(String, f64)> = Vec::new();
+    let mut cluster = String::new();
+    for c in para.chars() {
+        if !cluster.is_empty() && !combining(c) {
+            let w = font.width(&cluster, t.size);
+            atoms.push((std::mem::take(&mut cluster), w));
+        }
+        cluster.push(c);
+    }
+    if !cluster.is_empty() {
+        let w = font.width(&cluster, t.size);
+        atoms.push((cluster, w));
+    }
+    wrap_words(thai_words(atoms), width)
+}
+
 /// A mark drawn over or under the letter before it: Thai vowels and tone marks, and Latin
 /// combining accents.
 fn combining(c: char) -> bool {
     matches!(u32::from(c), 0x0E31 | 0x0E34..=0x0E3A | 0x0E47..=0x0E4E | 0x0300..=0x036F)
+}
+
+/// The shaped clusters `atoms` (text and advance) grouped into words: a word starts after spaces,
+/// or where [`crate::linebreak::breaks`] lets a row end inside a run without spaces, and keeps the
+/// spaces that follow it. A break that falls inside a cluster is not one.
+fn thai_words(atoms: Vec<(String, f64)>) -> Vec<Vec<(String, f64)>> {
+    let text: String = atoms.iter().map(|(s, _)| s.as_str()).collect();
+    let mut cuts = Vec::new();
+    let mut run_start: Option<usize> = None;
+    for (at, c) in text.char_indices().chain(std::iter::once((text.len(), ' '))) {
+        match (c.is_whitespace(), run_start) {
+            (false, None) => {
+                cuts.push(at);
+                run_start = Some(at);
+            }
+            (true, Some(start)) => {
+                let run = text.get(start..at).unwrap_or_default();
+                cuts.extend(crate::linebreak::breaks(run).into_iter().map(|b| start.saturating_add(b)));
+                run_start = None;
+            }
+            _ => {}
+        }
+    }
+    // `cuts` is in order: each run's start, then the breaks inside it, then the next run's start.
+    let mut words: Vec<Vec<(String, f64)>> = Vec::new();
+    let mut cuts = cuts.into_iter().peekable();
+    let mut offset = 0usize;
+    for atom in atoms {
+        while cuts.peek().is_some_and(|&c| c < offset) {
+            cuts.next();
+        }
+        let starts_word = cuts.peek() == Some(&offset);
+        offset = offset.saturating_add(atom.0.len());
+        match words.last_mut() {
+            Some(word) if !starts_word => word.push(atom),
+            _ => words.push(vec![atom]),
+        }
+    }
+    words
 }
 
 fn is_thai(c: char) -> bool {
@@ -554,7 +597,7 @@ fn shaped_layout(t: &AddedText, line: &str, rtl: bool) -> Result<(Vec<Piece>, f6
 
 /// The width of `s` in a shaped-text item; the item's font's estimate if it can't be shaped (drawing
 /// then reports why).
-fn shaped_width(t: &AddedText, s: &str, rtl: bool) -> f64 {
+pub(crate) fn shaped_width(t: &AddedText, s: &str, rtl: bool) -> f64 {
     if let Some(font) = &t.font {
         return font.width(s, t.size);
     }
