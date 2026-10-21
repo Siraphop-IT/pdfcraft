@@ -297,6 +297,58 @@ pub fn undrawable_text(d: &Dict) -> Option<(&'static str, char)> {
 /// Text the standard fonts can't draw comes out as `?`: [`undrawable_text`] says which, and
 /// [`crate::set_appearance`] marks the annotation with it (`pdfcraft_fonts::UNDRAWN_MARK`).
 pub fn build(d: &Dict) -> Option<Stream> {
+    build_with(d, None)
+}
+
+/// BMU PDF: a text box's or Fill & Sign text's characters the standard fonts can't draw (Thai),
+/// drawn in a face installed on the machine instead of as `?`. The face is embedded into `doc`.
+pub(crate) struct FaceText<'a> {
+    pub doc: &'a mut pdfcraft_cos::Document,
+    pub face: &'a pdfcraft_fonts::system_face::SystemFace,
+}
+
+/// The width of `s` at `size` in `face` (0 when it can't be shaped).
+fn face_width(face: &pdfcraft_fonts::system_face::SystemFace, s: &str, size: f64) -> f64 {
+    pdfcraft_fonts::source_shaping::shape_lenient(&face.bytes, s).map_or(0.0, |r| r.advance * size)
+}
+
+/// A mark drawn over or under the letter before it (Thai vowels and tone marks, Latin accents):
+/// a line never starts with one.
+fn combining(c: char) -> bool {
+    matches!(u32::from(c), 0x0E31 | 0x0E34..=0x0E3A | 0x0E47..=0x0E4E | 0x0300..=0x036F)
+}
+
+/// [`wrap`] measured in `face`, a word wider than the box broken between clusters, so a Thai
+/// vowel or tone mark stays with its letter.
+fn face_wrap(face: &pdfcraft_fonts::system_face::SystemFace, text: &str, size: f64, width: f64) -> Vec<String> {
+    let fits = |s: &str| face_width(face, s, size) <= width;
+    let mut lines = Vec::new();
+    for para in text.split(['\n', '\r']) {
+        let mut line = String::new();
+        for (i, word) in para.split(' ').enumerate() {
+            let candidate = if i == 0 { word.to_string() } else { format!("{line} {word}") };
+            if fits(&candidate) {
+                line = candidate;
+                continue;
+            }
+            if !line.trim().is_empty() {
+                lines.push(std::mem::take(&mut line));
+            } else {
+                line.clear();
+            }
+            for c in word.chars() {
+                if !line.is_empty() && !combining(c) && !fits(&format!("{line}{c}")) {
+                    lines.push(std::mem::take(&mut line));
+                }
+                line.push(c);
+            }
+        }
+        lines.push(line);
+    }
+    lines
+}
+
+pub(crate) fn build_with(d: &Dict, face: Option<&mut FaceText>) -> Option<Stream> {
     // Imported measurement appearances may include leaders, captions and formatting that
     // this builder cannot reproduce. Preserve them rather than silently losing detail.
     if d.contains(b"Measure") && !d.contains(b"PCMeasureValue") {
@@ -745,23 +797,6 @@ pub fn build(d: &Dict) -> Option<Stream> {
                 rg(text_color)
             ));
             let mut out = c.into_bytes();
-            let mut y = rect[3] - pad - size * 0.9;
-            for line in wrap(&text, size, width) {
-                if y < rect[1] - size {
-                    break;
-                }
-                let lw = text_width(&line, size);
-                let x = match q {
-                    1 => rect[0] + pad + (width - lw) / 2.0,
-                    2 => rect[2] - pad - lw,
-                    _ => rect[0] + pad,
-                };
-                out.extend(format!("1 0 0 1 {} {} Tm ", n(x), n(y)).bytes());
-                out.extend(literal(&win_ansi(&line)));
-                out.extend_from_slice(b" Tj\n");
-                y -= size * 1.2;
-            }
-            out.extend_from_slice(b"ET\n");
             let mut font = Dict::new();
             font.set(b"Type".to_vec(), Object::name("Font"));
             font.set(b"Subtype".to_vec(), Object::name("Type1"));
@@ -769,6 +804,58 @@ pub fn build(d: &Dict) -> Option<Stream> {
             font.set(b"Encoding".to_vec(), Object::name("WinAnsiEncoding"));
             let mut fonts = Dict::new();
             fonts.set(b"Helv".to_vec(), Object::Dict(font));
+            let mut y = rect[3] - pad - size * 0.9;
+            if let Some(f) = face {
+                // Every line shaped, then one font resource for all their glyphs.
+                let mut placed = Vec::new();
+                for line in face_wrap(f.face, &text, size, width) {
+                    if y < rect[1] - size {
+                        break;
+                    }
+                    if !line.is_empty() {
+                        let run = pdfcraft_fonts::source_shaping::shape_lenient(&f.face.bytes, &line).ok()?;
+                        let lw = run.advance * size;
+                        let x = match q {
+                            1 => rect[0] + pad + (width - lw) / 2.0,
+                            2 => rect[2] - pad - lw,
+                            _ => rect[0] + pad,
+                        };
+                        placed.push((x, y, run));
+                    }
+                    y -= size * 1.2;
+                }
+                let mappings: Vec<_> = placed.iter().flat_map(|(_, _, run)| run.glyphs.iter().map(|g| (g.text.clone(), g.id))).collect();
+                if !mappings.is_empty() {
+                    let resource = pdfcraft_fonts::embedding::embed_mapping(f.doc, &mut fonts, &f.face.bytes, &f.face.family, &mappings).ok()?;
+                    out.extend(format!("/{resource} {} Tf\n", n(size)).bytes());
+                    // `embed_mapping` numbers the glyphs 1, 2, … in the order given.
+                    let mut cid = 1u32;
+                    for (x, y, run) in &placed {
+                        for g in &run.glyphs {
+                            let (gx, gy) = (x + g.position[0] * size, y + g.position[1] * size);
+                            out.extend(format!("1 0 0 1 {} {} Tm <{cid:04X}> Tj\n", n(gx), n(gy)).bytes());
+                            cid = cid.saturating_add(1);
+                        }
+                    }
+                }
+            } else {
+                for line in wrap(&text, size, width) {
+                    if y < rect[1] - size {
+                        break;
+                    }
+                    let lw = text_width(&line, size);
+                    let x = match q {
+                        1 => rect[0] + pad + (width - lw) / 2.0,
+                        2 => rect[2] - pad - lw,
+                        _ => rect[0] + pad,
+                    };
+                    out.extend(format!("1 0 0 1 {} {} Tm ", n(x), n(y)).bytes());
+                    out.extend(literal(&win_ansi(&line)));
+                    out.extend_from_slice(b" Tj\n");
+                    y -= size * 1.2;
+                }
+            }
+            out.extend_from_slice(b"ET\n");
             res.set(b"Font".to_vec(), Object::Dict(fonts));
             let mut stream = form(full, &out, res);
             if let Some(m) = matrix {

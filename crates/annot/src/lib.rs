@@ -1282,7 +1282,10 @@ pub fn orient_image_stamp(doc: &mut Document, page: usize, index: usize, rotatio
 fn refuse_foreign_text(doc: &Document, d: &Dict) -> Result<(), AnnotError> {
     let drawn_elsewhere =
         d.get(b"AP").is_some_and(|ap| doc.resolve(ap).as_dict().is_some_and(|ap| ap.contains(b"N"))) && pdfcraft_fonts::undrawn_mark(d).is_none();
-    if drawn_elsewhere && let Some((what, c)) = appearance::undrawable_text(d) {
+    if drawn_elsewhere
+        && installed_face(d).is_none()
+        && let Some((what, c)) = appearance::undrawable_text(d)
+    {
         return Err(AnnotError::Undrawable(format!(
             "BMU PDF can't redraw this comment: the standard fonts can't draw \"{}\" (U+{:04X}) in {what}, which would then show as ? (the comment was left as it is)",
             c.escape_debug(),
@@ -1290,6 +1293,17 @@ fn refuse_foreign_text(doc: &Document, d: &Dict) -> Result<(), AnnotError> {
         )));
     }
     Ok(())
+}
+
+/// BMU PDF: the installed face a text box or Fill & Sign text whose characters the standard fonts
+/// can't draw (Thai) is drawn in, if the machine has one with all of them.
+fn installed_face(d: &Dict) -> Option<&'static pdfcraft_fonts::system_face::SystemFace> {
+    if d.name(b"Subtype") != Some(b"FreeText") {
+        return None;
+    }
+    appearance::undrawable_text(d)?;
+    let text = d.get(b"Contents").and_then(Object::as_string).map(PdfString::to_text)?;
+    pdfcraft_fonts::system_face::for_text(&text)
 }
 
 /// (Re)generate `/AP /N` for the annotation `r` from its dictionary, for an edit that keeps its
@@ -1320,6 +1334,14 @@ fn redraw_or_restore(doc: &mut Document, r: ObjRef, before: Dict) -> Result<(), 
 /// can't show, and for display-only copies.
 fn draw_appearance(doc: &mut Document, r: ObjRef) -> Result<(), AnnotError> {
     let d = annot_dict(doc, r);
+    // BMU PDF: a text box or Fill & Sign text the standard fonts can't draw (Thai) is drawn in a
+    // face installed on the machine, embedded, instead of with `?`.
+    if let Some(face) = installed_face(&d) {
+        // A face that can't be shaped or embedded falls back to the standard fonts below.
+        if let Some(stream) = appearance::build_with(&d, Some(&mut appearance::FaceText { doc, face })) {
+            return store_appearance(doc, r, &d, stream, None);
+        }
+    }
     let subtype = String::from_utf8_lossy(d.name(b"Subtype").unwrap_or_default()).into_owned();
     let Some(stream) = build_appearance(doc, &d) else { return Err(AnnotError::Unsupported(subtype)) };
     apply_appearance(doc, r, &d, stream)
@@ -1347,7 +1369,11 @@ fn build_appearance(doc: &Document, d: &Dict) -> Option<Stream> {
 /// Store a built appearance on the annotation: the cheap half of [`set_appearance`].
 fn apply_appearance(doc: &mut Document, r: ObjRef, d: &Dict, stream: Stream) -> Result<(), AnnotError> {
     // Characters the standard fonts can't draw came out as `?`: mark the annotation with the first.
-    let missing = appearance::undrawable_text(d).map(|(_, c)| c);
+    store_appearance(doc, r, d, stream, appearance::undrawable_text(d).map(|(_, c)| c))
+}
+
+/// [`apply_appearance`] with the character that came out as `?`, if one did.
+fn store_appearance(doc: &mut Document, r: ObjRef, d: &Dict, stream: Stream, missing: Option<char>) -> Result<(), AnnotError> {
     let ap = doc.add(Object::Stream(stream));
     // A copy (a shared /AP is left alone) that keeps unknown entries; the old down and rollover
     // appearances would show the previous look on press or hover, so they go with the old /N.

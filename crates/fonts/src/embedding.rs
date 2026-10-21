@@ -210,7 +210,12 @@ pub fn embed_mapping(
     let mut widths = Vec::with_capacity(mappings.len());
     let mut cmap = String::from(UNICODE_CMAP_HEAD);
     for (chunk_index, chunk) in mappings.chunks(100).enumerate() {
-        let _ = writeln!(cmap, "{} beginbfchar", chunk.len());
+        // A glyph that adds no text of its own (a Thai mark shaped into its letter's cluster) gets
+        // no entry: an empty `<>` destination makes some readers drop the whole map.
+        let mapped = chunk.iter().filter(|(s, _)| !s.is_empty()).count();
+        if mapped > 0 {
+            let _ = writeln!(cmap, "{mapped} beginbfchar");
+        }
         let _ = writeln!(cid_encoding, "{} begincidchar", chunk.len());
         for (offset, (unicode, gid)) in chunk.iter().enumerate() {
             let cid = u16::try_from(chunk_index.saturating_mul(100).saturating_add(offset).saturating_add(1)).map_err(|_| "font mapping limit")?;
@@ -226,10 +231,14 @@ pub fn embed_mapping(
             widths.push(Object::Real(width));
             cff_widths.insert(glyph, width);
             let _ = writeln!(cid_encoding, "<{cid:04X}> {glyph}");
-            let hex: String = unicode.encode_utf16().map(|u| format!("{u:04X}")).collect();
-            let _ = writeln!(cmap, "<{cid:04X}> <{hex}>");
+            if !unicode.is_empty() {
+                let hex: String = unicode.encode_utf16().map(|u| format!("{u:04X}")).collect();
+                let _ = writeln!(cmap, "<{cid:04X}> <{hex}>");
+            }
         }
-        cmap.push_str("endbfchar\n");
+        if mapped > 0 {
+            cmap.push_str("endbfchar\n");
+        }
         cid_encoding.push_str("endcidchar\n");
     }
     cmap.push_str(CMAP_TAIL);

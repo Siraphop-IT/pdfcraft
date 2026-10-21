@@ -3668,8 +3668,8 @@ milestone = "M5"
 status = "partial"
 commands = ["comment.freetext"]
 tools = ["comment_add"]
-evidence = ["crates/ui-egui/tests/comments.rs::sticky_note_composer_posts_and_returns_to_select", "crates/annot/src/tests.rs::text_box_text_and_colour_changes_are_drawn"]
-notes = "Helvetica text with colour, size and alignment; /RC (XHTML) and /DS are written and kept in step with edits; per-run formatting (bold/italic spans) is not yet"
+evidence = ["crates/ui-egui/tests/comments.rs::sticky_note_composer_posts_and_returns_to_select", "crates/annot/src/tests.rs::text_box_text_and_colour_changes_are_drawn", "crates/engine/tests/thai_comments.rs::a_thai_text_box_is_drawn_and_can_be_moved"]
+notes = "Helvetica text with colour, size and alignment; /RC (XHTML) and /DS are written and kept in step with edits; per-run formatting (bold/italic spans) is not yet. In BMU PDF, text Helvetica can't draw (Thai) is drawn in a face installed on the machine (Tahoma, Leelawadee UI or TH Sarabun New), embedded with ToUnicode; without one it still shows ?"
 
 [[feature]]
 id = "comment.callout"
@@ -5268,8 +5268,8 @@ milestone = "M5"
 status = "shipped"
 commands = ["sign.fill.text"]
 tools = ["fill_sign_add"]
-evidence = ["crates/ui-egui/tests/fill_sign.rs::text_marks_and_date", "crates/annot/src/tests.rs::fill_and_sign_items_are_drawn", "crates/automation/tests/automation.rs::fill_and_sign_through_tools", "crates/engine/src/tests.rs::typed_text_reads_across_as_displayed_on_rotated_pages"]
-notes = "typewriter FreeText, 10 pt Helvetica. Reads across as displayed on pages with /Rotate (sideways-stored scans): the box follows the displayed axes and the appearance is turned back (PdfCraft key /PCTextRotate); other apps that regenerate the appearance from /DA draw it unturned. A later page rotation does not re-turn it. Field detection does not work on scanned (image-only) forms yet"
+evidence = ["crates/ui-egui/tests/fill_sign.rs::text_marks_and_date", "crates/annot/src/tests.rs::fill_and_sign_items_are_drawn", "crates/automation/tests/automation.rs::fill_and_sign_through_tools", "crates/engine/src/tests.rs::typed_text_reads_across_as_displayed_on_rotated_pages", "crates/engine/tests/thai_comments.rs::thai_fill_and_sign_text_flattens_to_the_thai_typed"]
+notes = "typewriter FreeText, 10 pt Helvetica. Reads across as displayed on pages with /Rotate (sideways-stored scans): the box follows the displayed axes and the appearance is turned back (PdfCraft key /PCTextRotate); other apps that regenerate the appearance from /DA draw it unturned. A later page rotation does not re-turn it. Field detection does not work on scanned (image-only) forms yet. In BMU PDF, Thai is drawn in an installed face (Tahoma first), embedded, and flattens to searchable text; Thai lines in a narrow box break between clusters, not between dictionary words"
 
 [[feature]]
 id = "form.fill-sign-marks"
