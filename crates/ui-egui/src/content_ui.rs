@@ -618,7 +618,7 @@ fn installed_font_choices(ui: &mut egui::Ui, s: &mut AddedText) {
     for font in fonts.iter().take(400) {
         let chosen = s.font.as_ref().is_some_and(|f| f.family == font.family);
         if ui.selectable_label(chosen, &font.face).clicked() {
-            match std::fs::read(&font.path).map_err(|e| e.to_string()).and_then(|b| pdfcraft_engine::TextFont::new(b).map_err(|e| e.to_string())) {
+            match font.read().and_then(|b| pdfcraft_engine::TextFont::new(b).map_err(|e| e.to_string())) {
                 Ok(f) => {
                     s.font = Some(f);
                     ui.data_mut(|d| {

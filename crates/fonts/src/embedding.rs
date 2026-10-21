@@ -65,6 +65,55 @@ pub fn validate_document_input(bytes: &[u8]) -> Result<(), String> {
 }
 
 /// Validate before allocating any PDF objects, so an invalid font cannot partly mutate a doc.
+/// The faces in a font file: the count a TrueType collection (`ttcf`, Windows' angsana.ttc and
+/// cordia.ttc) lists, else 1.
+pub fn face_count(bytes: &[u8]) -> u32 {
+    if bytes.get(..4) != Some(b"ttcf") {
+        return 1;
+    }
+    bytes.get(8..12).map_or(0, |n| u32::from_be_bytes([n[0], n[1], n[2], n[3]]).min(256))
+}
+
+/// Face `index` of a font file as a standalone font program: a collection's face gets its own
+/// table directory, with its tables copied after it; a single face is returned as it is.
+pub fn standalone_face(bytes: &[u8], index: u32) -> Result<Vec<u8>, String> {
+    let bad = || "the font collection is malformed".to_string();
+    if bytes.get(..4) != Some(b"ttcf") {
+        return if index == 0 { Ok(bytes.to_vec()) } else { Err("the font file has one face".into()) };
+    }
+    if index >= face_count(bytes) {
+        return Err("the font collection has no such face".into());
+    }
+    let u32_at = |at: usize| bytes.get(at..at.checked_add(4)?).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]));
+    let at = 12usize.checked_add(index as usize * 4).ok_or_else(bad)?;
+    let dir = u32_at(at).ok_or_else(bad)? as usize;
+    let header = bytes.get(dir..dir.checked_add(12).ok_or_else(bad)?).ok_or_else(bad)?;
+    let tables = usize::from(u16::from_be_bytes([header[4], header[5]]));
+    if tables == 0 || tables > 64 {
+        return Err(bad());
+    }
+    let records = bytes.get(dir.saturating_add(12)..dir.saturating_add(12 + tables * 16)).ok_or_else(bad)?;
+    let mut out = header.to_vec();
+    out.resize(12 + tables * 16, 0);
+    for (i, record) in records.as_chunks::<16>().0.iter().enumerate() {
+        let offset = u32::from_be_bytes([record[8], record[9], record[10], record[11]]) as usize;
+        let length = u32::from_be_bytes([record[12], record[13], record[14], record[15]]) as usize;
+        let data = bytes.get(offset..offset.checked_add(length).ok_or_else(bad)?).ok_or_else(bad)?;
+        if out.len().saturating_add(length) > 16 << 20 {
+            return Err("the selected font exceeds 16 MiB".into());
+        }
+        let new_offset = u32::try_from(out.len()).map_err(|_| bad())?;
+        let slot = out.get_mut(12 + i * 16..28 + i * 16).ok_or_else(bad)?;
+        slot.copy_from_slice(record);
+        slot[8..12].copy_from_slice(&new_offset.to_be_bytes());
+        out.extend_from_slice(data);
+        while out.len() % 4 != 0 {
+            out.push(0);
+        }
+    }
+    Ok(out)
+}
+
 pub fn validate(bytes: &[u8]) -> Result<(), String> {
     if bytes.len() > 16 << 20 {
         return Err("the selected font exceeds 16 MiB".into());
@@ -381,6 +430,39 @@ fn same_resource(doc: &Document, fonts: &Dict, name: &str, bytes: &[u8], glyph_m
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// BMU PDF: each face of an installed collection (macOS's ThonburiUI.ttc here; Windows keeps
+    /// Angsana New and Cordia New in .ttc files) comes out as a standalone face that validates,
+    /// names itself and draws Thai. Skipped where the file is missing; no font is committed.
+    #[test]
+    fn a_collection_face_stands_alone() {
+        let Ok(ttc) = std::fs::read("/System/Library/Fonts/ThonburiUI.ttc") else { return };
+        let n = super::face_count(&ttc);
+        assert!(n >= 2, "{n}");
+        for i in 0..n {
+            let face = super::standalone_face(&ttc, i).unwrap();
+            // ThonburiUI is a variable font (`validate` asks for a static instance), so read
+            // its names straight from the program.
+            let f = FontRef::new(&face).unwrap();
+            let family = f.localized_strings(skrifa::string::StringId::FAMILY_NAME).next().unwrap().to_string();
+            assert!(family.contains("Thonburi"), "{family}");
+            assert!(super::covers(&face, "กิ่น้ำ"));
+            assert!(crate::source_shaping::shape_lenient(&face, "น้ำ").is_ok());
+        }
+        assert!(super::standalone_face(&ttc, n).is_err());
+        // A static collection's faces validate for embedding.
+        if let Ok(baskerville) = std::fs::read("/System/Library/Fonts/Supplemental/Baskerville.ttc") {
+            for i in 0..super::face_count(&baskerville) {
+                let face = super::standalone_face(&baskerville, i).unwrap();
+                super::validate(&face).unwrap();
+                assert!(super::names(&face).unwrap().0.contains("Baskerville"));
+            }
+        }
+        // A truncated collection is an error, not a panic.
+        for cut in [4, 12, 16, 40, 200, ttc.len() / 2] {
+            let _ = super::standalone_face(ttc.get(..cut).unwrap_or_default(), 0);
+        }
+    }
     use crate::pdf::Metrics;
 
     #[test]

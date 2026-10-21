@@ -2562,7 +2562,15 @@ fn run_edit(doc: &mut pdfcraft_cos::Document, edit: &Edit, cx: &mut EditCtx) -> 
         }
         Edit::MoveObjects { page, objects, offset } => pdfcraft_edit::move_objects(doc, *page, objects, *offset)?,
         Edit::EditTextBlock { page, block, text, style } => {
-            pdfcraft_edit::rewrite_block(doc, *page, *block, Some(text), style)?;
+            let mut attempt = doc.clone();
+            match pdfcraft_edit::rewrite_block(&mut attempt, *page, *block, Some(text), style) {
+                Ok(_) => *doc = attempt,
+                // BMU PDF: Thai the paragraph's own font can't draw, with no font chosen.
+                Err(e) if style.resource.is_none() && style.family.is_none() && text.chars().any(|c| matches!(u32::from(c), 0x0E00..=0x0E7F)) => {
+                    *doc = text_fonts::thai_rewrite(doc, *page, *block, text, style).ok_or(e)?;
+                }
+                Err(e) => return Err(e.into()),
+            }
         }
         Edit::RegisterTextFont { page, bytes } => {
             pdfcraft_edit::text::register_text_font(doc, *page, bytes)?;

@@ -75,6 +75,8 @@ impl Automation {
             return Err(bad("font_file exceeds 16 MiB"));
         }
         let bytes = std::fs::read(&path).map_err(|e| failed(e.to_string()))?;
+        // A collection (.ttc) gives its first face.
+        let bytes = pdfcraft_engine::text_fonts::standalone_face(&bytes, 0).map_err(bad)?;
         t.font = Some(pdfcraft_engine::TextFont::new(bytes).map_err(|e| bad(e.to_string()))?);
         Ok(())
     }

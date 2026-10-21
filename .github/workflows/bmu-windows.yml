@@ -19,6 +19,18 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
+      # The craft-fonts build input, pinned as upstream's release build pins it: Noto Sans Thai is
+      # the bundled Thai face for Add text and for editing Thai text whose own font is incomplete.
+      - uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          ref: 3d9ab3a132ed0eff457e424226a435a901da30d3
+          path: craft-fonts
+      - name: Configure craft-fonts
+        shell: pwsh
+        run: |
+          "CRAFT_FONTS_DIR=$env:GITHUB_WORKSPACE\craft-fonts" >> $env:GITHUB_ENV
+          "CRAFT_FONTS_REQUIRED=1" >> $env:GITHUB_ENV
       - name: Rust toolchain
         run: rustup show
       - name: WiX v5
@@ -27,12 +39,19 @@ jobs:
       # only) and run the Windows OCR tests before packaging.
       - name: Thai text recognition
         shell: pwsh
-        run: Add-WindowsCapability -Online -Name "Language.OCR~~~th-TH~0.0.1.0" | Out-String
-      - name: Windows OCR tests
         run: |
+          Add-WindowsCapability -Online -Name "Language.OCR~~~th-TH~0.0.1.0" | Out-String
+          # Angsana New, Cordia New… (kept in .ttc collections), for the installed-font tests.
+          Add-WindowsCapability -Online -Name "Language.Fonts.Thai~~~und-THAI~0.0.1.0" | Out-String
+          Get-ChildItem "$env:WINDIR\Fonts" -Include angsa*,cordia*,tahoma* -Recurse | Select-Object -ExpandProperty Name
+      # bash -e: a failing command fails the step (pwsh only checks the last one).
+      - name: Windows OCR and Thai font tests
+        shell: bash
+        run: |
+          set -e
           cargo clippy -p pdfcraft-ocr --all-targets -- -D warnings
           cargo test -p pdfcraft-ocr
-          cargo test -p pdfcraft-engine --test windows_ocr --test ocr_edit -- --nocapture
+          cargo test -p pdfcraft-engine --test windows_ocr --test ocr_edit --test windows_fonts --test thai_edit_fallback --test thai_comments --test added_text_fonts -- --nocapture
       - name: Build and package
         shell: pwsh
         env:

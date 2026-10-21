@@ -405,7 +405,11 @@ fn format_section(app: &mut PdfCraftApp, ui: &mut egui::Ui, t: &Tokens) {
                 }
                 for font in fonts {
                     if ui.selectable_label(false, &font.face).clicked() {
-                        app.use_paths(crate::files::FilePurpose::TextFont { page: ed.page }, &[font.path]);
+                        // A face out of a collection (.ttc) is read standalone, not as the whole file.
+                        match font.read() {
+                            Ok(bytes) => app.use_text_font(ed.page, bytes),
+                            Err(e) => app.notify(format!("{}: {e}", font.face)),
+                        }
                     }
                 }
             } else {
