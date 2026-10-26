@@ -51,7 +51,7 @@ jobs:
           set -e
           cargo clippy -p pdfcraft-ocr --all-targets -- -D warnings
           cargo test -p pdfcraft-ocr
-          cargo test -p pdfcraft-engine --test windows_ocr --test ocr_edit --test windows_fonts --test thai_edit_fallback --test thai_comments --test added_text_fonts -- --nocapture
+          cargo test -p pdfcraft-engine --test windows_ocr --test it --test windows_fonts --test thai_edit_fallback --test thai_comments --test added_text_fonts -- --nocapture
       - name: Build and package
         shell: pwsh
         env:
