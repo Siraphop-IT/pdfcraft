@@ -2683,3 +2683,39 @@ key	Space	Space
 @id	file.word_count	นับคำ…
 	You are viewing the signed version of “{from}” (revision {rev}). It is a snapshot: changes here won't affect the original.	คุณกำลังดูเวอร์ชันที่ลงนามของ “{from}” (ฉบับแก้ไขที่ {rev}) เป็นสแนปช็อต: การเปลี่ยนแปลงที่นี่จะไม่ส่งผลต่อต้นฉบับ
 	You are viewing revision {rev} of “{from}”. It is a snapshot: changes here won't affect the original.	คุณกำลังดูฉบับแก้ไขที่ {rev} ของ “{from}” เป็นสแนปช็อต: การเปลี่ยนแปลงที่นี่จะไม่ส่งผลต่อต้นฉบับ
+
+# Added from upstream's Thai catalogue at the 2026-10-26 merge (upstream wording, not yet
+# aligned with the BMU terminology above).
+	Show gaps between pages	แสดงช่องว่างระหว่างหน้า
+	Hide gaps to join page edges. Margins inside the PDF remain unchanged.	ซ่อนช่องว่างเพื่อให้ขอบหน้าต่อกัน ระยะขอบภายใน PDF ยังคงเหมือนเดิม
+	Added text	ข้อความที่เพิ่ม
+	Link URL	URL ของลิงก์
+	Search tools and commands	ค้นหาเครื่องมือและคำสั่ง
+	Text editing line	บรรทัดแก้ไขข้อความ
+	Text to place	ข้อความที่จะวาง
+	Tooltip	คำแนะนำเครื่องมือ
+	Words or phrases to redact	คำหรือวลีที่จะปิดทับ
+	In streams that use LZW encoding, use Flate instead	ใช้ Flate แทนในสตรีมที่เข้ารหัสแบบ LZW
+	Scale	มาตราส่วน
+	Common scales	มาตราส่วนที่ใช้บ่อย
+	Enter a scale such as 1:50.	ป้อนมาตราส่วน เช่น 1:50
+	Applying a scale switches units to m / mm.	การใช้มาตราส่วนจะเปลี่ยนหน่วยเป็น m / mm
+	Don't show again	ไม่ต้องแสดงอีก
+	Show a notice when a document is secured	แสดงการแจ้งเตือนเมื่อเอกสารมีการรักษาความปลอดภัย
+	Create & Edit	สร้างและแก้ไข
+	Review & Compare	ตรวจทานและเปรียบเทียบ
+	Forms & Signatures	แบบฟอร์มและลายเซ็น
+	Protect & Standardize	ป้องกันและกำหนดมาตรฐาน
+	Customize & Automate	ปรับแต่งและทำงานอัตโนมัติ
+	No tools match your search.	ไม่มีเครื่องมือที่ตรงกับการค้นหาของคุณ
+	Expand all tools	ขยายเครื่องมือทั้งหมด
+	Collapse all tools	ยุบเครื่องมือทั้งหมด
+	Today	วันนี้
+	Restore the last view (page, zoom and page display) when a document is opened again	คืนค่ามุมมองล่าสุด (หน้า การซูม และการแสดงหน้า) เมื่อเปิดเอกสารอีกครั้ง
+@plural	{n} reply|{n} replies	การตอบกลับ {n} รายการ
+	Page tools	เครื่องมือหน้า
+	Insert pages from a file after the selection…	แทรกหน้าจากไฟล์หลังส่วนที่เลือก…
+	Rotate the selected pages counterclockwise	หมุนหน้าที่เลือกทวนเข็มนาฬิกา
+	Rotate the selected pages clockwise	หมุนหน้าที่เลือกตามเข็มนาฬิกา
+	Extract the selected pages…	แยกหน้าที่เลือกออก…
+	Delete the selected pages	ลบหน้าที่เลือก

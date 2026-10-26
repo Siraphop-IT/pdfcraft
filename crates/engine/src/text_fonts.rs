@@ -1,7 +1,7 @@
 //! Explicit document-font discovery. Interface fallbacks never enter this catalogue.
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FontFile {
     pub path: PathBuf,
     pub family: String,
