@@ -292,6 +292,7 @@ impl PdfCraftApp {
             }
             "view.next_tab" => self.step_tab(true),
             "view.previous_tab" => self.step_tab(false),
+            "view.side_by_side" => self.toggle_side_by_side(),
             "view.theme" => {
                 let next = if self.theme == ThemeKind::Light { ThemePreference::Dark } else { ThemePreference::Light };
                 self.set_theme_preference(next);

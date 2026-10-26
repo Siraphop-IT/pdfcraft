@@ -1899,7 +1899,10 @@ mod tests {
         let definitions = ctx.fonts(|f| f.definitions().clone());
         let stack = definitions.families.get(&family).unwrap();
         let preferred = stack.first().unwrap();
-        assert!(definitions.font_data.get(preferred).unwrap().font.as_ref() == thai.bytes, "the editor must shape with the complete matching face");
+        assert!(
+            (*definitions.font_data.get(preferred).unwrap().font).as_ref() == thai.bytes,
+            "the editor must shape with the complete matching face"
+        );
         let text = "กิ่ น้ำ น่ำ กี้ กึ้";
         let actual = ctx.fonts_mut(|f| f.layout_no_wrap(text.into(), FontId::new(48.0, family), Color32::BLACK));
         // Compare the mark offsets against the complete face alone, independently of the
@@ -1914,6 +1917,9 @@ mod tests {
         let offsets = |galley: &egui::Galley| galley.rows.iter().flat_map(|r| r.glyphs.iter().map(|g| g.uv_rect.offset)).collect::<Vec<_>>();
         assert_eq!(offsets(&actual), offsets(&expected));
         ctx.end_pass().textures_delta.clear();
+    }
+
+    #[test]
     fn the_rotate_knob_moves_below_when_there_is_no_room_above() {
         let view = Rect::from_min_max(Pos2::new(0.0, 100.0), Pos2::new(500.0, 500.0));
         let roomy = Rect::from_min_max(Pos2::new(100.0, 200.0), Pos2::new(200.0, 250.0));

@@ -2254,7 +2254,7 @@ fn the_accessible_window_has_the_window_title_as_its_name() {
     let mut h = harness();
     h.run_steps(2);
     let name = |h: &Harness<'static, PdfCraftApp>| h.root().accesskit_node().label().map(|l| l.to_string());
-    assert_eq!(name(&h).as_deref(), Some("b.pdf — PdfCraft"));
+    assert_eq!(name(&h).as_deref(), Some("b.pdf — BMU PDF"));
     {
         use pdfcraft_engine::Edit;
         let s = h.state_mut();
@@ -2265,6 +2265,6 @@ fn the_accessible_window_has_the_window_title_as_its_name() {
         s.session.apply(id, Edit::SetInitialView(Box::new(v))).unwrap();
     }
     h.run_steps(2);
-    assert_eq!(name(&h).as_deref(), Some("Quarterly report — PdfCraft"));
+    assert_eq!(name(&h).as_deref(), Some("Quarterly report — BMU PDF"));
     assert_eq!(name(&h), Some(h.state().window_title.clone()));
 }

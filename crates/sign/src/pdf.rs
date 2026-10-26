@@ -378,7 +378,7 @@ pub const WORDINGS: &[&str] = &[
     "The signer's certificate has critical extensions BMU PDF does not recognize ({}).",
     // Why a certificate that matched the issuer was not used to build the chain.
     "The certificate of {} is not a CA certificate that may issue certificates, so it is not used to vouch for {}.",
-    "The certificate of {} has critical extensions PdfCraft does not recognize, so it is not used to vouch for {}.",
+    "The certificate of {} has critical extensions BMU PDF does not recognize, so it is not used to vouch for {}.",
     "The certificate of {} does not allow this many CA certificates below it (path length), so it is not used to vouch for {}.",
     "The certificate of {} was not valid at the time of signing, so it is not used to vouch for {}.",
     "The signer's identity is unknown because it has not been included in your list of trusted certificates and none of its parent certificates are trusted certificates.",
@@ -1125,7 +1125,7 @@ fn check_dss_revocation(doc: &Document, signer: Option<&Certificate>, at: &Optio
         None if cut => {
             info.details.push(Detail::of(
                 "The signature could not be checked ({}).",
-                Fill::Reason("the /DSS holds more revocation evidence than PdfCraft reads".into()),
+                Fill::Reason("the /DSS holds more revocation evidence than BMU PDF reads".into()),
             ));
             DssRevocation::Incomplete
         }

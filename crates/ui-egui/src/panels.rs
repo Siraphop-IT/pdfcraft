@@ -542,7 +542,13 @@ fn format_section(app: &mut PdfCraftApp, ui: &mut egui::Ui, t: &Tokens) {
             .map(|f| (f.resource, f.face))
             .collect();
         let shown = ed.font_shown(&sources);
-        let out = crate::format_text_ui::panel(ui, t, &mut ed.look, Some(&mut ed.extras), Fonts { sources: Some(&sources), shown, installed_chosen: false });
+        let out = crate::format_text_ui::panel(
+            ui,
+            t,
+            &mut ed.look,
+            Some(&mut ed.extras),
+            Fonts { sources: Some(&sources), shown, installed_chosen: false },
+        );
         let mut changed = out.changed;
         match out.font {
             Some(FontChoice::KeepSource) => {
@@ -627,7 +633,7 @@ fn format_section(app: &mut PdfCraftApp, ui: &mut egui::Ui, t: &Tokens) {
 /// style and alignment. An installed face that can't be embedded says why under the panel.
 fn added_text_format(ui: &mut egui::Ui, t: &Tokens, style: &mut pdfcraft_engine::AddedText) {
     use crate::format_text_ui::FontChoice;
-    let error_id = egui::Id::new("installed-font-error");
+    let error_id = egui::Id::unique("installed-font-error");
     let shown = style.font.as_ref().map_or_else(|| style.family.label().to_string(), |f| f.family.clone());
     let fonts = crate::format_text_ui::Fonts { sources: None, shown, installed_chosen: style.font.is_some() };
     let out = crate::format_text_ui::panel(ui, t, style, None, fonts);
@@ -639,9 +645,13 @@ fn added_text_format(ui: &mut egui::Ui, t: &Tokens, style: &mut pdfcraft_engine:
         Some(FontChoice::Installed(font)) => match font.read().and_then(|b| pdfcraft_engine::TextFont::new(b).map_err(|e| e.to_string())) {
             Ok(f) => {
                 style.font = Some(f);
-                ui.data_mut(|d| d.remove::<String>(error_id));
+                ui.data_mut(|d| {
+                    d.remove::<String>(error_id);
+                });
             }
-            Err(e) => ui.data_mut(|d| d.insert_temp(error_id, format!("{}: {e}", font.face))),
+            Err(e) => ui.data_mut(|d| {
+                d.insert_temp(error_id, format!("{}: {e}", font.face));
+            }),
         },
         _ => {}
     }

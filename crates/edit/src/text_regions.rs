@@ -1121,37 +1121,91 @@ pub(super) fn rewrite_styled_block(
                 let mut properties = Dict::new();
                 properties.set(b"ActualText".to_vec(), Object::String(PdfString::text(&string)));
                 block_ops.push(Op::new("BDC", vec![Object::name("Span"), Object::Dict(properties)]));
-                // Absolute glyph matrices preserve marks and contextual positions; font-program
-                // codes are separate from Unicode and ToUnicode/ActualText keep logical text.
                 let size = size_of(source, item.1);
                 let mut extra = 0.0;
-                let thai = outlined_thai.contains(&item.2);
-                let mut cluster_spacing = 0.0;
-                for (i, glyph) in shaped.glyphs.iter().enumerate() {
-                    if thai && !glyph.text.is_empty() {
-                        // Thai cluster text belongs to its first glyph. Defer its spacing
-                        // until the next cluster so the vowel/tone glyphs stay on their base.
-                        extra += cluster_spacing;
-                        cluster_spacing =
-                            state.char_spacing * glyph.text.chars().count() as f64 + state.word_spacing * glyph.text.matches(' ').count() as f64;
+                if outlined_thai.contains(&item.2) {
+                    // BMU PDF: Thai drawn in outlines, whose glyphs may sit in several Type 3 fonts.
+                    // Absolute glyph matrices preserve marks and contextual positions; font-program
+                    // codes are separate from Unicode and ToUnicode/ActualText keep logical text.
+                    let mut cluster_spacing = 0.0;
+                    for (i, glyph) in shaped.glyphs.iter().enumerate() {
+                        if !glyph.text.is_empty() {
+                            // Thai cluster text belongs to its first glyph. Defer its spacing
+                            // until the next cluster so the vowel/tone glyphs stay on their base.
+                            extra += cluster_spacing;
+                            cluster_spacing =
+                                state.char_spacing * glyph.text.chars().count() as f64 + state.word_spacing * glyph.text.matches(' ').count() as f64;
+                        }
+                        let mut matrix = tm;
+                        let x = (glyph.position[0] * size + extra) * state.scale;
+                        let y = glyph.position[1] * size;
+                        matrix[4] += matrix[0] * x + matrix[2] * y;
+                        matrix[5] += matrix[1] * x + matrix[3] * y;
+                        let (resource, code) = resources.get(i).ok_or_else(|| EditError::Invalid("shaped glyph resource is missing".into()))?;
+                        state.font = Some((resource.clone(), size));
+                        block_ops.push(Op::new("BT", vec![]));
+                        block_ops.extend(state.ops());
+                        block_ops.push(Op::new("Tm", matrix.map(n).to_vec()));
+                        block_ops.push(Op::new("Tj", vec![Object::String(PdfString::literal(code.clone()))]));
+                        block_ops.push(Op::new("ET", vec![]));
                     }
-                    let mut matrix = tm;
-                    let x = (glyph.position[0] * size + extra) * state.scale;
-                    let y = glyph.position[1] * size;
-                    matrix[4] += matrix[0] * x + matrix[2] * y;
-                    matrix[5] += matrix[1] * x + matrix[3] * y;
-                    let (resource, code) = resources.get(i).ok_or_else(|| EditError::Invalid("shaped glyph resource is missing".into()))?;
+                    extra += cluster_spacing;
+                } else {
+                    // One text object for the run: each glyph is placed where shaping put it by a TJ
+                    // adjustment from where the glyph before it ends (its advance in the embedded
+                    // font's widths), and raised by the text rise for a mark set above or below
+                    // (ISO 32000-1 §9.4.3, §9.3.7). Font-program codes are separate from Unicode;
+                    // ToUnicode and ActualText keep the logical text.
+                    let resource = &resources.first().ok_or_else(|| EditError::Invalid("shaped font is missing".into()))?.0;
                     state.font = Some((resource.clone(), size));
+                    let per_unit = 1000.0 / size;
+                    if !per_unit.is_finite() {
+                        return Err(EditError::Invalid("the shaped text has no size".into()));
+                    }
+                    let shown = fonts
+                        .get(resource.as_bytes())
+                        .and_then(|f| doc.resolve(f).as_dict().cloned())
+                        .map(|d| Metrics::from_dict(doc, &d))
+                        .ok_or_else(|| EditError::Invalid("shaped font is missing".into()))?;
+                    // Spacing is part of each glyph's position, so the run itself has none.
+                    let (char_spacing, word_spacing, rise) = (state.char_spacing, state.word_spacing, state.rise);
+                    state.char_spacing = 0.0;
+                    state.word_spacing = 0.0;
                     block_ops.push(Op::new("BT", vec![]));
                     block_ops.extend(state.ops());
-                    block_ops.push(Op::new("Tm", matrix.map(n).to_vec()));
-                    block_ops.push(Op::new("Tj", vec![Object::String(PdfString::literal(code.clone()))]));
-                    block_ops.push(Op::new("ET", vec![]));
-                    if !thai {
-                        extra += state.char_spacing * glyph.text.chars().count() as f64 + state.word_spacing * glyph.text.matches(' ').count() as f64;
+                    block_ops.push(Op::new("Tm", tm.iter().map(|v| n(*v)).collect()));
+                    // `pen`: where the next glyph would start, in thousandths of the font size.
+                    let (mut pen, mut raised) = (0.0, rise);
+                    let mut shown_glyphs: Vec<Object> = Vec::new();
+                    for (i, glyph) in shaped.glyphs.iter().enumerate() {
+                        let target = (glyph.position[0] * size + extra) * per_unit;
+                        let glyph_rise = rise + glyph.position[1] * size;
+                        if (glyph_rise - raised).abs() > 1e-9 || shown_glyphs.len() >= 4096 {
+                            if !shown_glyphs.is_empty() {
+                                block_ops.push(Op::new("TJ", vec![Object::Array(std::mem::take(&mut shown_glyphs))]));
+                            }
+                            if (glyph_rise - raised).abs() > 1e-9 {
+                                block_ops.push(Op::new("Ts", vec![n(glyph_rise)]));
+                                raised = glyph_rise;
+                            }
+                        }
+                        if (target - pen).abs() > 1e-6 {
+                            shown_glyphs.push(n(pen - target));
+                        }
+                        let code = u16::try_from(i + 1).map_err(|_| EditError::Invalid("shaped glyph limit".into()))?;
+                        shown_glyphs.push(Object::String(PdfString::literal(code.to_be_bytes().to_vec())));
+                        pen = target + shown.width(u32::from(code)) * 1000.0;
+                        extra += char_spacing * glyph.text.chars().count() as f64 + word_spacing * glyph.text.matches(' ').count() as f64;
                     }
+                    if !shown_glyphs.is_empty() {
+                        block_ops.push(Op::new("TJ", vec![Object::Array(shown_glyphs)]));
+                    }
+                    if (raised - rise).abs() > 1e-9 {
+                        block_ops.push(Op::new("Ts", vec![n(rise)]));
+                    }
+                    block_ops.push(Op::new("ET", vec![]));
+                    (state.char_spacing, state.word_spacing) = (char_spacing, word_spacing);
                 }
-                extra += cluster_spacing;
                 block_ops.push(Op::new("EMC", vec![]));
                 segment_width = (shaped.advance * size + extra) * state.scale * source.origin.k;
             } else {

@@ -4677,8 +4677,9 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         app.execute("edit.copy");
     }
     // Read mode hides the tools (#2646), and full screen is the page and nothing else (#1459);
-    // the quick tools come back with the window.
-    if app.mode != crate::Mode::Read && !app.full_screen {
+    // the quick tools come back with the window. With two documents drawn (side by side), only
+    // the active one has them: the tools are the app's, and one bar has one set of widget ids.
+    if app.mode != crate::Mode::Read && !app.full_screen && app.active == Some(index) {
         quick_bar(app, avail, ui);
     }
     if let Some((source, file, destination)) = remote_open {

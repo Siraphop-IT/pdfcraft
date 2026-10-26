@@ -146,6 +146,7 @@ pub mod portable;
 mod protect;
 mod recovery;
 pub mod scroll_speed;
+mod side_by_side_ui;
 #[cfg(not(target_arch = "wasm32"))]
 mod system_fonts;
 mod tab_context;
@@ -848,6 +849,12 @@ pub struct PdfCraftApp {
     /// Compare files: the chosen older document and the last result.
     pub compare_old: Option<DocId>,
     pub compare: Option<compare_ui::CompareState>,
+    /// Window ▸ Show side by side (BMU PDF): the tabs shown on the left and right while the
+    /// active tab is one of them (`side_by_side_ui`).
+    pub(crate) side_by_side: Option<[DocId; 2]>,
+    /// A PDF chosen to show beside a tab while it is still being opened: the tab, and the path.
+    #[cfg(not(target_arch = "wasm32"))]
+    side_by_side_waiting: Option<(DocId, String)>,
     /// The JavaScript console and the Document JavaScripts draft.
     pub js_console: js_ui::JsConsole,
     pub doc_js: js_ui::DocJsDraft,
@@ -1223,6 +1230,9 @@ impl PdfCraftApp {
             pdfa: Default::default(),
             compare_old: None,
             compare: None,
+            side_by_side: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            side_by_side_waiting: None,
             js_console: Default::default(),
             doc_js: Default::default(),
             a11y: a11y_ui::A11yState::default(),
@@ -3683,6 +3693,8 @@ impl eframe::App for PdfCraftApp {
             }
         }
         self.poll_updates();
+        #[cfg(not(target_arch = "wasm32"))]
+        self.poll_side_by_side();
         self.poll_print();
         // Shortcuts deferred last frame: the text field has taken that frame's typing since.
         let deferred = std::mem::take(&mut self.deferred_commands);
@@ -3760,9 +3772,10 @@ impl eframe::App for PdfCraftApp {
             // or ⌘L to leave).
             egui::CentralPanel::default().frame(egui::Frame::NONE.fill(egui::Color32::BLACK)).show(ui, |ui| {
                 if let Some(i) = self.active {
-                    match compare_ui::side_by_side(self, i) {
-                        Some((old, new)) => compare_ui::compare_area(self, old, new, ui),
-                        None => canvas::document_area(self, i, ui),
+                    match (compare_ui::side_by_side(self, i), self.side_by_side_views()) {
+                        (Some((old, new)), _) => compare_ui::compare_area(self, old, new, ui),
+                        (None, Some((left, right))) => side_by_side_ui::area(self, left, right, ui),
+                        (None, None) => canvas::document_area(self, i, ui),
                     }
                 }
             });
@@ -3796,9 +3809,10 @@ impl eframe::App for PdfCraftApp {
                 match self.active {
                     None if self.combine_showing() => combine_ui::page(self, ui),
                     None => home::show(self, ui),
-                    Some(index) => match compare_ui::side_by_side(self, index) {
-                        Some((old, new)) => compare_ui::compare_area(self, old, new, ui),
-                        None => canvas::document_area(self, index, ui),
+                    Some(index) => match (compare_ui::side_by_side(self, index), self.side_by_side_views()) {
+                        (Some((old, new)), _) => compare_ui::compare_area(self, old, new, ui),
+                        (None, Some((left, right))) => side_by_side_ui::area(self, left, right, ui),
+                        (None, None) => canvas::document_area(self, index, ui),
                     },
                 }
             }
@@ -3824,8 +3838,12 @@ impl PdfCraftApp {
         self.combine_thumbs_frame(ctx);
         // Retire hidden documents before admitting the visible document's textures, so the
         // three cache limits apply to the application, regardless of how many tabs are open.
-        // Side by side: the comparison's old file renders alongside the active one.
-        let partner = self.active.and_then(|i| compare_ui::side_by_side(self, i)).map(|(old, _)| old);
+        // Side by side: the comparison's old file, or the other half of Window ▸ Show side by
+        // side, renders alongside the active one.
+        let partner = self.active.and_then(|i| match compare_ui::side_by_side(self, i) {
+            Some((old, _)) => Some(old),
+            None => self.side_by_side_views().map(|(left, right)| if left == i { right } else { left }),
+        });
         for (i, view) in self.views.iter_mut().enumerate() {
             if Some(i) != self.active
                 && Some(i) != partner

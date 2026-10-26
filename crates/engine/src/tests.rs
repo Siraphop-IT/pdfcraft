@@ -3488,6 +3488,7 @@ fn pasted_added_content_keeps_its_style_and_picture() {
         color: [0.8, 0.1, 0.2],
         align: TextAlign::Center,
         char_spacing: 0.0,
+        font: None,
     };
     s.apply(id, Edit::AddText { page: 0, text: text.clone() }).unwrap();
     let copied = s.get(id).unwrap().added()[0].content.clone();

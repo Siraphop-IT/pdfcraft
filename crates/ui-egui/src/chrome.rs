@@ -162,6 +162,10 @@ pub fn tab_strip(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                                         action = Some(crate::tab_context::Action::Reopen);
                                         ui.close();
                                     }
+                                    if ui.button(tl!("Show side by side")).clicked() {
+                                        action = Some(crate::tab_context::Action::SideBySide(id));
+                                        ui.close();
+                                    }
                                     let label = if cfg!(target_os = "macos") { tl!("Reveal in Finder") } else { tl!("Reveal in File Explorer") };
                                     if ui.add_enabled(reveal, egui::Button::new(label)).clicked() {
                                         action = Some(crate::tab_context::Action::Reveal(id));

@@ -227,6 +227,8 @@ pub const COMMANDS: &[CommandSpec] = &[
     // also run from Combine files, which has no document open.
     c("view.next_tab", "Next tab", VIEW, Some(Shortcut { command: false, shift: false, mac_ctrl: true, key: "Tab" }), Nothing, "chevron-right"),
     c("view.previous_tab", "Previous tab", VIEW, Some(Shortcut { command: false, shift: true, mac_ctrl: true, key: "Tab" }), Nothing, "chevron-left"),
+    // BMU PDF: two documents side by side in one window (Acrobat's Window ▸ Split, vertically).
+    c("view.side_by_side", "Show side by side", VIEW, None, Document, "columns-2"),
     // View-local history also appears in the Page navigation section; don't duplicate its menu.
     c("view.previous_view", "Previous view", None, Some(Shortcut::cmd("[")), Document, "chevron-left"),
     c("view.next_view", "Next view", None, Some(Shortcut::cmd("]")), Document, "chevron-right"),

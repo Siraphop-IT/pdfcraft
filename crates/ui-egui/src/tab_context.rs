@@ -5,6 +5,8 @@ pub(crate) enum Action {
     Close(DocId),
     Reopen,
     Reveal(DocId),
+    /// Show this tab beside the active one (or, from the active tab itself, beside the next).
+    SideBySide(DocId),
 }
 
 impl crate::PdfCraftApp {
@@ -33,6 +35,13 @@ impl crate::PdfCraftApp {
                     }
                 }
             }
+            Action::SideBySide(id) => match self.active_ids() {
+                Some((_, active)) if active != id => self.show_side_by_side(active, id),
+                _ => {
+                    self.side_by_side = None;
+                    self.toggle_side_by_side();
+                }
+            },
             Action::Reveal(id) => {
                 #[cfg(not(target_arch = "wasm32"))]
                 if let Some(path) = self.session.get(id).and_then(|d| d.path.clone())
