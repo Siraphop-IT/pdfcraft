@@ -98,3 +98,22 @@ fn with_one_tab_open_a_second_pdf_is_chosen_and_opened_beside_it() {
     assert_eq!(h.state().active, Some(0), "the first stays active, on the left");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn a_halfs_caption_chooses_the_tab_it_shows_without_moving_the_tabs() {
+    let mut h = harness(&["one.pdf", "two.pdf", "three.pdf", "four.pdf"]);
+    h.state_mut().active = Some(0);
+    h.run_steps(2);
+    assert!(h.state_mut().execute("view.side_by_side"));
+    h.run_steps(3);
+    assert_eq!(h.state().side_by_side_views(), Some((0, 1)));
+    let order: Vec<_> = h.state().views.iter().map(|v| v.id).collect();
+    // The right half's arrow lists the open tabs; choosing the third shows it there.
+    h.get_all_by_label("Choose the document shown here").nth(1).expect("the right half's arrow").click();
+    h.run_steps(3);
+    h.get_all_by_label("three.pdf").last().expect("the third tab in the list").click();
+    h.run_steps(3);
+    assert_eq!(h.state().side_by_side_views(), Some((0, 2)), "the first and third side by side");
+    assert_eq!(h.state().active, Some(2));
+    assert_eq!(h.state().views.iter().map(|v| v.id).collect::<Vec<_>>(), order, "the tabs keep their order");
+}

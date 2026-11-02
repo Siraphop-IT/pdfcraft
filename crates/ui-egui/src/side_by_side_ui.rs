@@ -4,6 +4,10 @@
 //! keeps its place. Choosing a tab that is not one of the two shows it alone, and choosing one of
 //! them again brings the pair back; closing either ends it. A comparison shown side by side
 //! (Compare files) takes precedence.
+//!
+//! Any two tabs make a pair, wherever they are in the tab strip, so pairing never reorders the
+//! tabs: Window ▸ Show side by side with lists them, and each half's caption chooses the tab that
+//! half shows.
 
 use egui::{Event, PointerButton};
 use pdfcraft_engine::DocId;
@@ -14,7 +18,7 @@ use crate::theme::{self, Tokens};
 impl PdfCraftApp {
     /// The two halves (left, right) as view indexes, when the active tab is one of a pair whose
     /// tabs are both still open.
-    pub(crate) fn side_by_side_views(&self) -> Option<(usize, usize)> {
+    pub fn side_by_side_views(&self) -> Option<(usize, usize)> {
         let [left, right] = self.side_by_side?;
         let active = self.active?;
         let l = self.views.iter().position(|v| v.id == left)?;
@@ -54,9 +58,34 @@ impl PdfCraftApp {
         self.active = Some(l);
     }
 
+    /// The tab shown beside the active one, when a pair shows.
+    pub(crate) fn side_by_side_partner(&self) -> Option<usize> {
+        let (left, right) = self.side_by_side_views()?;
+        Some(if self.active == Some(left) { right } else { left })
+    }
+
+    /// Shows tab `doc` in half `half` (0 left, 1 right) of the pair showing now and makes it the
+    /// active tab; choosing the other half's tab swaps the two. Nothing happens unless a pair
+    /// shows and `doc` is open.
+    pub fn set_side_by_side_half(&mut self, half: usize, doc: DocId) {
+        if !self.side_by_side_showing() {
+            return;
+        }
+        let (Some([left, right]), Some(index)) = (self.side_by_side, self.views.iter().position(|v| v.id == doc)) else { return };
+        let pair = match half {
+            0 if doc == right => [right, left],
+            0 => [doc, right],
+            1 if doc == left => [right, left],
+            1 => [left, doc],
+            _ => return,
+        };
+        self.side_by_side = Some(pair);
+        self.active = Some(index);
+    }
+
     /// Chooses a PDF and opens it to the right of `left`. A file already open is shown from its
     /// tab; a cancelled or failed open leaves the view as it was.
-    fn open_beside(&mut self, left: DocId) {
+    pub(crate) fn open_beside(&mut self, left: DocId) {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let dialog = rfd::AsyncFileDialog::new().add_filter("PDF", &["pdf"]);
@@ -94,7 +123,8 @@ impl PdfCraftApp {
     }
 }
 
-/// The caption row above each half: the file's name, with the active half marked.
+/// The caption row above each half: the file's name, which chooses the tab shown there, with the
+/// active half marked.
 const CAPTION_H: f32 = 24.0;
 
 /// Draws `left` and `right` (view indexes) beside each other in `ui`. A press in a half makes its
@@ -125,8 +155,11 @@ pub(crate) fn area(app: &mut PdfCraftApp, left: usize, right: usize, ui: &mut eg
         app.active = Some(i);
     }
     let names = ids.map(|id| app.session.get(id).map(|d| d.display_name()).unwrap_or_default());
+    // Every open tab, in tab order, for the captions' lists.
+    let tabs: Vec<(DocId, String)> = (0..app.views.len()).filter_map(|i| Some((app.views.get(i)?.id, crate::canvas::tab_label(app, i)?))).collect();
     ui.painter().vline(rect.min.x + half_w, rect.y_range(), egui::Stroke::new(gap, t.border));
     let mut close = false;
+    let mut chosen: Option<(usize, DocId)> = None;
     for (k, half) in halves.into_iter().enumerate() {
         // Drawing a half can close its own tab (its snapshot bar's Close), which shifts the
         // indexes: each half is found again by id, and the frame stops once either is gone.
@@ -144,7 +177,25 @@ pub(crate) fn area(app: &mut PdfCraftApp, left: usize, right: usize, ui: &mut eg
         caption_ui.horizontal_centered(|ui| {
             let color = if active { t.text } else { t.text_muted };
             let font = if active { theme::semibold(12.0) } else { theme::regular(12.0) };
-            ui.add(egui::Label::new(egui::RichText::new(&names[k]).font(font).color(color)).truncate());
+            // The name and the arrow after it open the list of tabs; the arrow and the close
+            // button keep their room however long the name.
+            let reserved = if k == 1 { 52.0 } else { 26.0 };
+            let name = ui
+                .scope(|ui| {
+                    ui.set_max_width((ui.available_width() - reserved).max(0.0));
+                    ui.add(egui::Label::new(egui::RichText::new(&names[k]).font(font).color(color)).truncate().sense(egui::Sense::click()))
+                })
+                .inner;
+            let arrow = crate::icons::button(ui, "chevron-down", 20.0, false, tl!("Choose the document shown here"));
+            let list = arrow.union(name);
+            egui::Popup::menu(&list).show(|ui| {
+                for (id, label) in &tabs {
+                    if ui.selectable_label(*id == ids[k], label).clicked() {
+                        chosen = Some((k, *id));
+                        ui.close();
+                    }
+                }
+            });
             if k == 1 {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if crate::icons::button(ui, "x", 20.0, false, tl!("Stop showing side by side")).clicked() {
@@ -160,6 +211,8 @@ pub(crate) fn area(app: &mut PdfCraftApp, left: usize, right: usize, ui: &mut eg
     }
     if close {
         app.side_by_side = None;
+    } else if let Some((half, id)) = chosen {
+        app.set_side_by_side_half(half, id);
     }
 }
 

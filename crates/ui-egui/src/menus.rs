@@ -4,7 +4,7 @@
 //! Items run registry commands (`pdfcraft_engine::commands`) by id, with the registry's label and
 //! shortcut, so a menu click and its shortcut run the same command. A few items have menu-only
 //! ids: the zoom keys the document view handles itself, the side panel choices, the clipboard
-//! keys, the recent files and the open documents. [`PdfCraftApp::run_menu_command`] runs every
+//! keys, the recent files, the open documents and the tabs to show side by side. [`PdfCraftApp::run_menu_command`] runs every
 //! one of them, once per click, whichever bar it came from.
 
 use craft_keymap::{Key, Mods};
@@ -34,6 +34,12 @@ pub(crate) const SELECT_ALL: &str = "edit.select_all";
 pub(crate) const NO_RECENT: &str = "file.no_recent";
 /// An open document in the Window menu, `{"index": n}` in the tab strip.
 pub(crate) const DOCUMENT: &str = "window.document";
+/// Window ▸ Show side by side with: the open tab `{"index": n}` shown beside the active one.
+pub(crate) const SIDE_BY_SIDE_WITH: &str = "window.side_by_side_with";
+/// Window ▸ Show side by side with, when no other tab is open.
+const NO_OTHER_TABS: &str = "window.no_other_tabs";
+/// Window ▸ Show side by side with ▸ Other PDF…: a PDF chosen and opened beside the active tab.
+const SIDE_BY_SIDE_OPEN: &str = "window.side_by_side_open";
 /// A side panel, `{"panel": name}` ([`PANELS`]).
 pub(crate) const PANEL: &str = "view.panel";
 const ACTUAL_SIZE: &str = "view.zoom.actual_size";
@@ -52,6 +58,8 @@ const EXTRA: &[(&str, &str, Option<Shortcut>)] = &[
     (DELETE, "Delete", Some(Shortcut { command: false, shift: false, mac_ctrl: false, key: "Delete" })),
     (SELECT_ALL, "Select all", Some(crate::commands::SELECT_ALL)),
     (NO_RECENT, "No recent files", None),
+    (NO_OTHER_TABS, "No other open documents", None),
+    (SIDE_BY_SIDE_OPEN, "Other PDF…", None),
     (ACTUAL_SIZE, "Actual size", Some(crate::commands::ACTUAL_SIZE)),
     (PAGE_LEVEL, "Zoom to page level", Some(crate::commands::PAGE_LEVEL)),
     (FIT_WIDTH, "Fit to width", Some(crate::commands::FIT_WIDTH)),
@@ -99,6 +107,7 @@ const TITLES: &[&str] = &[
     "Display theme",
     "Tools",
     "Fill & Sign",
+    "Show side by side with",
 ];
 
 /// Separator.
@@ -322,7 +331,15 @@ impl PdfCraftApp {
                 .collect(),
         )];
         sign.extend(list(SIGN, &mut used));
-        let window = list(WINDOW, &mut used);
+        // Show side by side with follows Show side by side.
+        let mut window = Vec::new();
+        for node in list(WINDOW, &mut used) {
+            let pair = matches!(&node, Node::Item(it) if it.command.id == "view.side_by_side");
+            window.push(node);
+            if pair {
+                window.push(self.side_by_side_menu());
+            }
+        }
         let help = list(HELP, &mut used);
         let mut view = vec![
             Node::submenu(tl!("Zoom"), list(ZOOM, &mut used)),
@@ -407,6 +424,24 @@ impl PdfCraftApp {
         Node::submenu(crate::i18n::menu_label("file.open_recent", label), items)
     }
 
+    /// Window ▸ Show side by side with: every open tab but the active one, in tab order, the one
+    /// beside it now marked, then Other PDF….
+    fn side_by_side_menu(&self) -> Node {
+        let mut items: Vec<Node> = (0..self.views.len())
+            .filter(|&index| self.active != Some(index))
+            .filter_map(|index| {
+                let name = crate::canvas::tab_label(self, index)?;
+                Some(Item::new(CommandRef::with_params(SIDE_BY_SIDE_WITH, serde_json::json!({ "index": index })), name).radio(false).into())
+            })
+            .collect();
+        if items.is_empty() {
+            items.push(self.menu_item(NO_OTHER_TABS, None));
+        }
+        items.push(Node::Separator);
+        items.push(self.menu_item(SIDE_BY_SIDE_OPEN, None));
+        Node::submenu(tl!("Show side by side with"), items)
+    }
+
     /// View ▸ Tools: the All tools groups, each a submenu of its ready tools that no other menu
     /// lists, sections apart.
     fn tools_menu(&self, used: &[&str]) -> Vec<Node> {
@@ -461,7 +496,9 @@ impl PdfCraftApp {
         let text = ctx.text_edit_focused() && matches!(command.id.as_str(), "edit.undo" | "edit.redo" | "edit.copy" | CUT | PASTE | SELECT_ALL);
         let enabled = text
             || match command.id.as_str() {
-                NO_RECENT => false,
+                NO_RECENT | NO_OTHER_TABS => false,
+                SIDE_BY_SIDE_WITH => index.is_some_and(|i| i < self.views.len() && self.active.is_some_and(|a| a != i)),
+                SIDE_BY_SIDE_OPEN => has_doc,
                 "file.open_recent" => index.is_none_or(|i| i < self.recent.len()),
                 "file.clear_recent" => !self.recent.is_empty(),
                 DOCUMENT => index.is_some_and(|i| i < self.views.len()),
@@ -492,6 +529,7 @@ impl PdfCraftApp {
             "view.theme.light" => Some(self.theme_preference == ThemePreference::Light),
             "view.theme.dark" => Some(self.theme_preference == ThemePreference::Dark),
             PANEL => Some(panel(command).is_some_and(|p| self.right == Some(p))),
+            SIDE_BY_SIDE_WITH => Some(index.is_some() && self.side_by_side_partner() == index),
             _ => None,
         };
         ItemState { enabled, checked }
@@ -523,6 +561,17 @@ impl PdfCraftApp {
             DOCUMENT => {
                 if let Some(i) = index.filter(|&i| i < self.views.len()) {
                     self.active = Some(i);
+                }
+            }
+            SIDE_BY_SIDE_WITH => {
+                let other = index.and_then(|i| self.views.get(i)).map(|v| v.id);
+                if let (Some((_, active)), Some(other)) = (self.active_ids(), other) {
+                    self.show_side_by_side(active, other);
+                }
+            }
+            SIDE_BY_SIDE_OPEN => {
+                if let Some((_, active)) = self.active_ids() {
+                    self.open_beside(active);
                 }
             }
             "edit.copy" => self.menu_input.push(egui::Event::Copy),
@@ -675,7 +724,10 @@ mod tests {
         for it in items {
             let id = it.command.id.as_str();
             assert!(
-                commands::command(id).is_some() || extra(id).is_some() || [PANEL, DOCUMENT].contains(&id) || Builtin::of(&it.command).is_some(),
+                commands::command(id).is_some()
+                    || extra(id).is_some()
+                    || [PANEL, DOCUMENT, SIDE_BY_SIDE_WITH].contains(&id)
+                    || Builtin::of(&it.command).is_some(),
                 "{id} runs something"
             );
         }
@@ -748,6 +800,40 @@ mod tests {
         let bar = linux(&app, &ctx);
         assert!(!item(&bar, &CommandRef::new(NO_RECENT)).enabled, "an empty list shows a greyed placeholder");
         assert!(bar.find(&CommandRef::new("file.clear_recent")).is_none());
+    }
+
+    #[test]
+    fn side_by_side_with_pairs_any_tab_without_moving_the_tabs() {
+        let (mut app, ctx) = app(&["a.pdf", "b.pdf", "c.pdf", "d.pdf"]);
+        app.active = Some(0);
+        let order = |app: &PdfCraftApp| app.views.iter().map(|v| v.id).collect::<Vec<_>>();
+        let before = order(&app);
+        let with = |i: usize| CommandRef::with_params(SIDE_BY_SIDE_WITH, serde_json::json!({ "index": i }));
+        let bar = linux(&app, &ctx);
+        // Every tab but the active one, in tab order, none marked yet.
+        let listed: Vec<&str> = bar.items().into_iter().filter(|it| it.command.id == SIDE_BY_SIDE_WITH).map(|it| it.label.as_str()).collect();
+        assert_eq!(listed, ["b.pdf", "c.pdf", "d.pdf"]);
+        assert_eq!(item(&bar, &with(2)).kind, ItemKind::Radio(false));
+        app.run_menu_command(&ctx, &with(2));
+        assert_eq!(app.side_by_side_views(), Some((0, 2)), "the first tab beside the third");
+        assert_eq!(app.active, Some(0));
+        assert_eq!(order(&app), before, "the tabs keep their order");
+        assert_eq!(item(&linux(&app, &ctx), &with(2)).kind, ItemKind::Radio(true), "the tab beside it is marked");
+        // A half's caption swaps in another tab, or swaps the two halves.
+        let d = app.views[3].id;
+        app.set_side_by_side_half(1, d);
+        assert_eq!(app.side_by_side_views(), Some((0, 3)));
+        assert_eq!(app.active, Some(3), "the chosen tab is the active one");
+        let a = app.views[0].id;
+        app.set_side_by_side_half(1, a);
+        assert_eq!(app.side_by_side_views(), Some((3, 0)), "choosing the other half's tab swaps them");
+        assert_eq!(order(&app), before);
+        // The active tab itself is not offered; with one tab, a greyed placeholder.
+        assert!(linux(&app, &ctx).find(&with(app.active.unwrap_or_default())).is_none());
+        let (app, ctx) = self::app(&["a.pdf"]);
+        let bar = linux(&app, &ctx);
+        assert!(!item(&bar, &CommandRef::new(NO_OTHER_TABS)).enabled);
+        assert!(item(&bar, &CommandRef::new(SIDE_BY_SIDE_OPEN)).enabled);
     }
 
     /// A native backend that reports what the test queues, through the driver's dispatch as the

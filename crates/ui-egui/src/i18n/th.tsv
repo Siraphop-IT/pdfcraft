@@ -2724,6 +2724,10 @@ key	Space	Space
 	Show side by side	แสดงคู่กันซ้าย-ขวา
 	Stop showing side by side	เลิกแสดงคู่กัน
 	Open another PDF first, then show the two side by side.	เปิด PDF อีกไฟล์ก่อน แล้วจึงแสดงสองไฟล์คู่กัน
+	Show side by side with	แสดงคู่กับ
+	No other open documents	ไม่มีเอกสารอื่นที่เปิดอยู่
+	Other PDF…	PDF อื่น…
+	Choose the document shown here	เลือกเอกสารที่แสดงฝั่งนี้
 
 # BMU PDF: labels upstream added that neither Thai catalogue had (2026-10-26 merge). AI-assisted,
 # BMU terminology (Field, Form, Font in English letters), not yet reviewed by a native speaker.
