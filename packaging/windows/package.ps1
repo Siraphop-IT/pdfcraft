@@ -154,6 +154,9 @@ Invoke-Native 'test-msi' {
   & (Get-Process -Id $PID).Path -NoProfile -File (Join-Path $PSScriptRoot 'test-msi.ps1') $Msi `
     -CraftFontLicences $HasCraftFontLicences -ExpectedFontNoticesDirectory $Docs
 }
+# BMU PDF keeps its own all-users installer (its UpgradeCode and component GUIDs, checked by
+# test-msi.ps1 above), so upstream's dual-scope install policy (check-install-policy.ps1) is not
+# applied to it.
 # wix writes its debug symbols (.wixpdb) next to the MSI; keep them out of the release assets.
 Remove-Item -Force -ErrorAction SilentlyContinue ([IO.Path]::ChangeExtension($Msi, '.wixpdb'))
 & (Join-Path $PSScriptRoot 'sign.ps1') $Msi
