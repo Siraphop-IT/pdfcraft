@@ -1681,6 +1681,77 @@ fn ctrl_and_shift_clicks_select_several_files_that_move_and_go_together() {
     assert_eq!(h.state().combine_selection(), [0, 1, 2]);
 }
 
+/// Picks place `to` from the menu of the file whose number is `from` (1-based, as shown).
+fn move_by_number(h: &mut Harness<'static, PdfCraftApp>, from: usize, to: &str) {
+    h.get_by_label(&format!("Position {from}")).click();
+    h.run_steps(2);
+    h.get_by_label(to).click();
+    h.run_steps(2);
+}
+
+#[test]
+fn a_files_number_in_the_list_moves_it_to_any_place() {
+    let mut h = combine_of(&[("a.pdf", 1), ("b.pdf", 1), ("c.pdf", 1), ("d.pdf", 1)]);
+    move_by_number(&mut h, 1, "3");
+    assert_eq!(combine_names(&h), ["b.pdf", "c.pdf", "a.pdf", "d.pdf"], "the first file becomes the third; the rest keep their order");
+    move_by_number(&mut h, 4, "1 (first)");
+    assert_eq!(combine_names(&h), ["d.pdf", "b.pdf", "c.pdf", "a.pdf"]);
+    move_by_number(&mut h, 2, "4 (last)");
+    assert_eq!(combine_names(&h), ["d.pdf", "c.pdf", "a.pdf", "b.pdf"]);
+    // Each move is one undo step.
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    h.run_steps(2);
+    assert_eq!(combine_names(&h), ["d.pdf", "b.pdf", "c.pdf", "a.pdf"]);
+}
+
+#[test]
+fn a_files_number_on_its_grid_card_moves_it_to_any_place() {
+    let files: Vec<(String, Vec<u8>)> = ["a.pdf", "b.pdf", "c.pdf"].iter().map(|n| (n.to_string(), fixture(1))).collect();
+    let mut h = harness(1, move |app| app.use_files(pdfcraft_ui_egui::FilePurpose::Combine, files));
+    h.run_steps(3);
+    assert_eq!(h.state().combine_view, pdfcraft_ui_egui::CombineView::Grid);
+    move_by_number(&mut h, 3, "1 (first)");
+    assert_eq!(combine_names(&h), ["c.pdf", "a.pdf", "b.pdf"]);
+    // Only the file whose number was used moves, whatever else is selected.
+    h.state_mut().select_combine_rows(&[0, 1]);
+    h.state_mut().combine_move_row_to(1, 2);
+    assert_eq!(combine_names(&h), ["c.pdf", "b.pdf", "a.pdf"]);
+    h.state_mut().combine_move_row_to(9, 0);
+    h.state_mut().combine_move_row_to(0, 9);
+    assert_eq!(combine_names(&h), ["b.pdf", "a.pdf", "c.pdf"], "a place past the end is the end; a missing row is nothing");
+}
+
+#[test]
+fn a_combined_file_is_saved_in_the_folder_of_the_files_it_was_made_from() {
+    let dir = std::env::temp_dir().join(format!("pdfcraft-combine-folder-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let paths: Vec<String> = ["a.pdf", "b.pdf"]
+        .iter()
+        .map(|n| {
+            let p = dir.join(n);
+            std::fs::write(&p, fixture(1)).unwrap();
+            p.to_string_lossy().into_owned()
+        })
+        .collect();
+    let mut h = harness(1, |_| {});
+    h.state_mut().combine_paths(&paths);
+    h.run_steps(2);
+    h.state_mut().combine_staged();
+    h.run_steps(2);
+    let active = h.state().active.unwrap();
+    assert!(h.state().session.get(h.state().views[active].id).unwrap().path.is_none(), "the result is new and unsaved");
+    assert_eq!(h.state().save_dialog_start(active), Some(dir.clone()), "Save opens where the files are");
+    // Files that came with no folder (dropped as bytes): the system's choice, as before.
+    let files = vec![("x.pdf".to_string(), fixture(1)), ("y.pdf".to_string(), fixture(1))];
+    h.state_mut().use_files(pdfcraft_ui_egui::FilePurpose::Combine, files);
+    h.run_steps(2);
+    h.state_mut().combine_staged();
+    h.run_steps(2);
+    let active = h.state().active.unwrap();
+    assert_eq!(h.state().save_dialog_start(active), None);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 #[test]
 fn undo_and_redo_restore_the_combine_list() {
     let mut h = combine_of(&[("a.pdf", 1), ("b.pdf", 1), ("c.pdf", 1)]);

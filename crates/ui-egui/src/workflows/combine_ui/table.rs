@@ -183,7 +183,7 @@ fn table_body(ui: &mut egui::Ui, context: TableBody<'_>) {
         .sense(Sense::click())
         .auto_shrink([false, true])
         .cell_layout(Layout::left_to_right(Align::Center))
-        .column(Column::exact(18.0));
+        .column(Column::exact(48.0));
     for kind in order {
         builder = builder.column(Column::initial(widths[kind.index()]).at_least(kind.min_width()).resizable(true).clip(true));
     }
@@ -212,7 +212,7 @@ fn table_body(ui: &mut egui::Ui, context: TableBody<'_>) {
                 let check = rows.checks.get(i).cloned().unwrap_or(Ok(f.pages));
                 body.row(32.0, |mut row| {
                     row.set_selected(rows.selected.get(i).copied().unwrap_or(false));
-                    // Drag handle.
+                    // Drag handle, and the file's place, which can be picked from a list.
                     row.col(|ui| {
                         let id = ui.scope_id().with(("combine-drag", f.id));
                         ui.dnd_drag_source(id, i, |ui| {
@@ -222,6 +222,10 @@ fn table_body(ui: &mut egui::Ui, context: TableBody<'_>) {
                         .response
                         .on_hover_cursor(egui::CursorIcon::Grab)
                         .on_hover_text(tl!("Drag to reorder"));
+                        let (rect, _) = ui.allocate_exact_size(vec2(26.0, 18.0), Sense::hover());
+                        if let Some(place) = place_button(ui, t, rect, ui.scope_id().with(("combine-place", f.id)), i, n) {
+                            events.action = Some(RowAction::MoveTo { file: f.id, place });
+                        }
                     });
                     for kind in order {
                         row.col(|ui| match kind {
@@ -355,6 +359,44 @@ fn table_body(ui: &mut egui::Ui, context: TableBody<'_>) {
                 });
             }
         });
+}
+
+/// A file's place in the combined file, as a number in a small pill at `rect`. A click lists
+/// every place, so a file can be put first, third or last without dragging it past the others.
+/// Returns the place (0-based) picked.
+pub(crate) fn place_button(ui: &mut egui::Ui, t: &Tokens, rect: Rect, id: egui::Id, place: usize, count: usize) -> Option<usize> {
+    let resp = ui.interact(rect, id, Sense::click());
+    let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
+    let (fill, text) = if resp.hovered() || open { (t.accent, Color32::WHITE) } else { (t.accent_soft, t.accent_text) };
+    let painter = ui.painter_at(rect.expand(1.0));
+    painter.rect_filled(rect, CornerRadius::same(255), fill);
+    painter.text(rect.center(), egui::Align2::CENTER_CENTER, place.saturating_add(1).to_string(), theme::semibold(11.5), text);
+    let number = place.saturating_add(1).to_string();
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, crate::i18n::fmt(tl!("Position {n}"), &[("n", &number)])));
+    let resp =
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(tl!("Order in the combined file. Click to move it to another position."));
+    let mut chosen = None;
+    egui::Popup::menu(&resp).show(|ui| {
+        ui.label(egui::RichText::new(tl!("Move to position")).color(t.text_muted));
+        egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+            for p in 0..count {
+                let label = if p == 0 {
+                    crate::i18n::fmt(tl!("{n} (first)"), &[("n", "1")])
+                } else if p.saturating_add(1) == count {
+                    crate::i18n::fmt(tl!("{n} (last)"), &[("n", &count.to_string())])
+                } else {
+                    p.saturating_add(1).to_string()
+                };
+                if ui.selectable_label(p == place, label).clicked() {
+                    if p != place {
+                        chosen = Some(p);
+                    }
+                    ui.close();
+                }
+            }
+        });
+    });
+    chosen
 }
 
 /// Six dots: the drag handle.

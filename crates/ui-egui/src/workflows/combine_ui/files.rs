@@ -272,6 +272,9 @@ pub(crate) struct Incoming {
     pub note: Option<String>,
     /// The open document it is, when it came from a tab.
     pub open_doc: Option<pdfcraft_engine::DocId>,
+    /// The folder the file is stored in, when it came from disk: the combined file is saved
+    /// there by default.
+    pub folder: Option<std::path::PathBuf>,
 }
 
 /// A new value for [`CombineFile::auth`]: counted for the whole run, outside the undo history.
@@ -317,6 +320,8 @@ pub struct CombineFile {
     pub(super) origin_note: Option<String>,
     /// The open document it is, when it came from a tab: Add open documents leaves it out.
     pub(super) open_doc: Option<pdfcraft_engine::DocId>,
+    /// The folder the file is stored in, when known (see [`Incoming::folder`]).
+    pub(super) folder: Option<std::path::PathBuf>,
     /// The range last checked and the result: the number of pages it takes and the first of
     /// them (0-based), or why it is wrong.
     pub(super) checked: Option<(String, RangeCheck)>,
@@ -453,6 +458,12 @@ pub(crate) enum RowAction {
     },
     /// One page's trash (`Some`), or the selected pages: out of the list.
     RemovePages(Option<(u64, usize)>),
+    /// One file (by entry id) moved to `place` in the list (0 = first), whatever else is
+    /// selected: its number picked from the menu on its row or card.
+    MoveTo {
+        file: u64,
+        place: usize,
+    },
     /// Row `from` (and the rest of the selection, if it is selected) dropped on row `to`.
     Drop {
         from: usize,

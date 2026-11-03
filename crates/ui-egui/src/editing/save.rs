@@ -29,6 +29,14 @@ impl PdfCraftApp {
         }
     }
 
+    /// The folder Save As opens in for tab `index`: the document's own folder
+    /// ([`save_dialog_folder`]) or, for a new document made from files on disk (Combine), theirs.
+    pub fn save_dialog_start(&self, index: usize) -> Option<std::path::PathBuf> {
+        let view = self.views.get(index)?;
+        let path = self.session.get(view.id).and_then(|d| d.path.clone());
+        save_dialog_folder(path.as_deref()).or_else(|| view.save_folder.clone())
+    }
+
     /// Save the document shown in tab `index`. Returns `true` if it was written now. When it has
     /// to ask where (a new document, or Save As) it returns `false` and saves on a later frame,
     /// once the user has chosen.
@@ -50,7 +58,7 @@ impl PdfCraftApp {
         let (name, path) = (doc.name.clone(), doc.path.clone());
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let doc_path = path.clone();
+            let start = self.save_dialog_start(index);
             let destination = match (target, path, &self.save_override) {
                 (_, _, Some(p)) => p.clone(),
                 // An email attachment's temporary copy is no place to keep work: ask, as for a new
@@ -59,7 +67,10 @@ impl PdfCraftApp {
                 _ => {
                     let name = if name.to_ascii_lowercase().ends_with(".pdf") { name } else { format!("{name}.pdf") };
                     let dialog = rfd::AsyncFileDialog::new().add_filter("PDF", &["pdf"]).set_file_name(name);
-                    let dialog = in_document_folder(dialog, doc_path.as_deref());
+                    let dialog = match start {
+                        Some(dir) => dialog.set_directory(dir),
+                        None => dialog,
+                    };
                     // The bytes are taken once the user has chosen, so edits made meanwhile are saved too.
                     self.ask_one(crate::pickers::Ask::Save(dialog), None, move |app, dest| {
                         app.save_doc_to_then(id, &dest.to_string_lossy(), target, Box::new(after));

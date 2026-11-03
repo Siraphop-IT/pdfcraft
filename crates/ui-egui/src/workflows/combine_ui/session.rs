@@ -1,6 +1,6 @@
 #[cfg(not(target_arch = "wasm32"))]
 use super::MAX_FOLDER_FILES;
-use super::files::{AssessError, Assessed, CombineFile, Incoming, Secret, Snapshot, SortKey, UnlockPrompt, assess};
+use super::files::{AssessError, Assessed, CombineFile, Incoming, RowAction, Secret, Snapshot, SortKey, UnlockPrompt, assess};
 #[cfg(not(target_arch = "wasm32"))]
 use super::parts::combinable_in;
 use super::parts::{Part, items_of, moved_order, natural, parts_of, range_of, title_of};
@@ -231,6 +231,13 @@ impl PdfCraftApp {
         self.combine_tab.sort = None;
     }
 
+    /// Move the file at `row` of the Combine files list to `place` (both 0-based), as its number's
+    /// menu does; one undo step.
+    pub fn combine_move_row_to(&mut self, row: usize, place: usize) {
+        let Some(file) = self.combine_draft.get(row).map(|f| f.id) else { return };
+        self.combine_apply(RowAction::MoveTo { file, place });
+    }
+
     /// Close the Combine files tab and forget its list; the last document shows, if any.
     pub fn close_combine_tab(&mut self) {
         let showing = self.combine_showing();
@@ -246,15 +253,17 @@ impl PdfCraftApp {
 
     /// Add picked files to the Combine files list (and show it).
     pub(crate) fn stage_combine(&mut self, files: Vec<(String, Vec<u8>)>) {
-        let incoming =
-            files.into_iter().map(|(name, bytes)| Incoming { name, bytes: Arc::new(bytes), modified: None, note: None, open_doc: None }).collect();
+        let incoming = files
+            .into_iter()
+            .map(|(name, bytes)| Incoming { name, bytes: Arc::new(bytes), modified: None, note: None, open_doc: None, folder: None })
+            .collect();
         self.stage_combine_with(incoming);
     }
 
     /// Add files to the Combine files list, with what can be known about them up front.
     pub(crate) fn stage_combine_with(&mut self, files: Vec<Incoming>) {
         let mut added = Vec::new();
-        for Incoming { name, bytes, modified, note, open_doc } in files {
+        for Incoming { name, bytes, modified, note, open_doc, folder } in files {
             // Images and text files become PDFs as they join the list (#569): from then on they
             // are ordinary files, with pages, thumbnails and page ranges.
             // A file that can't be read joins the list all the same, with why (the Warnings
@@ -307,6 +316,7 @@ impl PdfCraftApp {
                 notes: Vec::new(),
                 origin_note: note,
                 open_doc,
+                folder,
                 checked: None,
             };
             f.take(assessed, None);
@@ -401,7 +411,8 @@ impl PdfCraftApp {
             match std::fs::read(path) {
                 Ok(bytes) => {
                     let modified = std::fs::metadata(path).and_then(|m| m.modified()).ok();
-                    incoming.push(Incoming { name, bytes: Arc::new(bytes), modified, note: None, open_doc: None });
+                    let folder = crate::editing::save_dialog_folder(Some(&path.to_string_lossy()));
+                    incoming.push(Incoming { name, bytes: Arc::new(bytes), modified, note: None, open_doc: None, folder });
                 }
                 Err(e) => self.notify_fmt("Couldn't read {name}: {e}", &[("name", &name), ("e", &e.to_string())]),
             }
@@ -440,7 +451,11 @@ impl PdfCraftApp {
             let modified = None;
             let note = doc.dirty.then(|| tl!("Includes unsaved changes").to_string());
             let name = if doc.name.to_ascii_lowercase().ends_with(".pdf") { doc.name.clone() } else { format!("{}.pdf", doc.name) };
-            incoming.push(Incoming { name, bytes: doc.bytes.clone(), modified, note, open_doc: Some(doc.id) });
+            #[cfg(not(target_arch = "wasm32"))]
+            let folder = crate::editing::save_dialog_folder(doc.path.as_deref());
+            #[cfg(target_arch = "wasm32")]
+            let folder = None;
+            incoming.push(Incoming { name, bytes: doc.bytes.clone(), modified, note, open_doc: Some(doc.id), folder });
         }
         self.stage_combine_with(incoming);
     }
@@ -458,11 +473,19 @@ impl PdfCraftApp {
         let sources: Vec<(String, Arc<Vec<u8>>, Option<String>)> =
             files.iter().map(|f| (title_of(&f.name).to_string(), f.bytes.clone(), Some(f.range.clone()).filter(|r| !r.trim().is_empty()))).collect();
         let passwords: Vec<Option<&str>> = files.iter().map(|f| f.password.as_ref().map(|p| p.0.as_str())).collect();
+        // Saved, by default, in the folder of the first file that has one.
+        let folder = files.iter().find_map(|f| f.folder.clone());
         match self.session.combine_grouped(&sources, &groups, &passwords) {
             Ok(bytes) => {
                 self.close_combine_tab();
                 let message = crate::i18n::fmt(tl!("Combined {n} files"), &[("n", &count.to_string())]);
-                self.open_created("Combined.pdf", bytes, &message)
+                let before = self.views.len();
+                self.open_created("Combined.pdf", bytes, &message);
+                if self.views.len() > before
+                    && let Some(view) = self.views.last_mut()
+                {
+                    view.save_folder = folder;
+                }
             }
             // The list stays, so the user can fix it.
             Err(e) => self.notify_fmt("Couldn't combine files: {e}", &[("e", &e.to_string())]),

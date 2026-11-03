@@ -35,6 +35,7 @@ pub(crate) use parts::range_of;
 pub(crate) use parts::{Part, moved_order, moved_pages, removed_pages, step_to};
 #[cfg(test)]
 use parts::{title_of, utc_stamp};
+pub(crate) use table::place_button;
 pub(crate) use view::page;
 
 /// Same reds and ambers as the signature status (`sign_ui`).

@@ -2885,3 +2885,8 @@ theme	Appearance	ลักษณะที่ปรากฏ
 @plural	{n} calculation now uses the new name.|{n} calculations now use the new name.	ตอนนี้ {n} การคำนวณใช้ชื่อใหม่แล้ว
 @plural	{n} field shows an old value|{n} fields show old values	{n} Field แสดงค่าเก่า
 @plural	{n} more field calculates too early.|{n} more fields calculate too early.	อีก {n} Field คำนวณเร็วเกินไป
+	Position {n}	ลำดับที่ {n}
+	Order in the combined file. Click to move it to another position.	ลำดับในไฟล์ที่รวม คลิกเพื่อย้ายไปลำดับอื่น
+	Move to position	ย้ายไปลำดับที่
+	{n} (first)	{n} (แรกสุด)
+	{n} (last)	{n} (ท้ายสุด)

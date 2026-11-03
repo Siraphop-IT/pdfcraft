@@ -467,6 +467,9 @@ pub struct DocView {
     pub close_requested: bool,
     /// A historical snapshot of another document (see [`Snapshot`]): `None` for real documents.
     pub snapshot: Option<Snapshot>,
+    /// Where Save first offers to save a new document that has no file of its own yet (a
+    /// combined file: the folder of the files it was made from).
+    pub(crate) save_folder: Option<std::path::PathBuf>,
     /// Two-page view: show the first page alone, as a cover (View ▸ Page display).
     pub cover: bool,
     /// Previous view / Next view: pages visited before (and after, once going back).
@@ -895,6 +898,7 @@ impl DocView {
             disk_changed: false,
             close_requested: false,
             snapshot: None,
+            save_folder: None,
             cover: false,
             back: Vec::new(),
             forward: Vec::new(),

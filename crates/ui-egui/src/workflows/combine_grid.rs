@@ -317,6 +317,7 @@ pub(crate) fn grid(
                     revision,
                     ppp,
                     fit,
+                    count: n,
                 };
                 let card_id = card.id(ui, f);
                 if let Some(a) = card.show(ui, t, f, thumbs) {

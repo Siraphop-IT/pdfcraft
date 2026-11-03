@@ -40,6 +40,7 @@ impl PdfCraftApp {
             | RowAction::MoveDown
             | RowAction::Remove
             | RowAction::RemoveFile(_)
+            | RowAction::MoveTo { .. }
             | RowAction::Drop { .. }
             | RowAction::DropAt { .. }
             | RowAction::Sort(_) => {
@@ -233,6 +234,12 @@ impl PdfCraftApp {
                 if self.combine_tab.cursor == Some(id) {
                     self.combine_tab.cursor = None;
                 }
+            }
+            RowAction::MoveTo { file, place } => {
+                let Some(now) = ids.iter().position(|id| *id == file) else { return };
+                // The gap among all the files that leaves it at `place` once it has left its own.
+                let gap = if place > now { place.saturating_add(1) } else { place };
+                self.combine_move_to_gap(BTreeSet::from([file]), gap);
             }
             RowAction::Drop { from, to } => {
                 let (Some(&dragged), Some(&target)) = (ids.get(from), ids.get(to)) else { return };

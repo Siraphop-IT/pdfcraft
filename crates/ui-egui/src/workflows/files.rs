@@ -442,7 +442,15 @@ impl PdfCraftApp {
             let incoming = files
                 .into_iter()
                 .zip(modified)
-                .map(|((name, bytes), modified)| crate::combine_ui::Incoming { name, bytes: Arc::new(bytes), modified, note: None, open_doc: None })
+                .zip(paths)
+                .map(|(((name, bytes), modified), path)| crate::combine_ui::Incoming {
+                    name,
+                    bytes: Arc::new(bytes),
+                    modified,
+                    note: None,
+                    open_doc: None,
+                    folder: crate::editing::save_dialog_folder(Some(&path.to_string_lossy())),
+                })
                 .collect();
             self.stage_combine_with(incoming);
         } else {

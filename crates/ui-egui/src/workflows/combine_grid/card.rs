@@ -19,6 +19,8 @@ pub(super) struct Card {
     pub(super) ppp: f32,
     /// The box the page is fitted in (the zoom).
     pub(super) fit: Vec2,
+    /// How many entries the list has: the places a file's number can be moved to.
+    pub(super) count: usize,
 }
 
 /// The paper box a card's page is drawn in.
@@ -115,6 +117,14 @@ impl Card {
             let r = Rect::from_center_size(paper.right_top() + vec2(-2.0, 2.0), Vec2::splat(18.0));
             painter.circle_filled(r.center(), 10.0, t.card);
             icons::paint(ui, r, "triangle-alert", 15.0, WARNING);
+        }
+
+        // A file's place in the combined file, at the page's top left corner: a click picks another.
+        if self.page.is_none() {
+            let badge = Rect::from_center_size(paper.left_top() + vec2(4.0, 4.0), vec2(26.0, 18.0));
+            if let Some(place) = crate::combine_ui::place_button(ui, t, badge, id.with("place"), self.i, self.count) {
+                action = Some(RowAction::MoveTo { file: f.id, place });
+            }
         }
 
         // The name, shortened in the middle to fit, and the pages taken when a range is set; on a
