@@ -299,6 +299,26 @@ try {
 foreach ($model in @('text-detection.onnx', 'text-recognition.onnx')) {
   Assert-Equal (@($modelFiles | Where-Object { $_ -ceq $model }).Count) 1 "OCR model $model in models\"
 }
+# "Combine files in BMU PDF" on PDFs and on the image menu's pictures. Each verb sits in its menu's
+# own component, so it follows the PDF and image context-menu choices. One process per selected
+# file (Document), each handing its file to the first: --combine "%1".
+$combineVerbs = @(,@('pdf', 'PdfcraftPdfContextMenu'))
+foreach ($ext in @('png', 'jpg', 'jpeg', 'tif', 'tiff', 'gif', 'bmp', 'jp2', 'j2k', 'jpx')) { $combineVerbs += ,@($ext, 'PdfcraftImageContextMenu') }
+foreach ($pair in $combineVerbs) {
+  $ext = $pair[0]
+  $component = $pair[1]
+  $key = 'Software\Classes\SystemFileAssociations\.' + $ext + '\shell\BMUPDF.Combine'
+  $menu = Read-Row ('SELECT `Value`, `Component_`, `Root` FROM `Registry` WHERE `Key` = ''' + $key + ''' AND `Name` IS NULL') 3
+  Assert-Equal $menu[0] 'Combine files in BMU PDF' "$ext Combine label"
+  Assert-Equal $menu[1] $component "$ext Combine component"
+  Assert-Equal $menu[2] '2' "$ext Combine machine-wide root"
+  $selection = Read-Row ('SELECT `Value`, `Component_` FROM `Registry` WHERE `Key` = ''' + $key + ''' AND `Name` = ''MultiSelectModel''') 2
+  Assert-Equal $selection[0] 'Document' "$ext Combine selection"
+  Assert-Equal $selection[1] $component "$ext Combine selection component"
+  $command = Read-Row ('SELECT `Value`, `Component_` FROM `Registry` WHERE `Key` = ''' + $key + '\command''') 2
+  Assert-Equal $command[0] '"[#PdfcraftExe]" --combine "%1"' "$ext Combine command"
+  Assert-Equal $command[1] $component "$ext Combine command component"
+}
 $rm = Read-Row 'SELECT `Dialog` FROM `Dialog` WHERE `Dialog` = ''MsiRMFilesInUse''' 1
 Assert-Equal $rm[0] 'MsiRMFilesInUse' 'Files-in-use dialog'
 [void] [Runtime.InteropServices.Marshal]::FinalReleaseComObject($Database)

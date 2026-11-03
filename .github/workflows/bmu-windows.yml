@@ -52,6 +52,11 @@ jobs:
           cargo clippy -p pdfcraft-ocr --all-targets -- -D warnings
           cargo test -p pdfcraft-ocr
           cargo test -p pdfcraft-engine --test windows_ocr --test it --test windows_fonts --test thai_edit_fallback --test thai_comments --test added_text_fonts -- --nocapture
+      # Explorer's "Combine files in BMU PDF" starts one process per selected file; these tests check
+      # on Windows that they all reach one window's Combine files list (they don't run on macOS).
+      - name: Single-instance hand-off tests
+        shell: bash
+        run: cargo test -p pdfcraft --bin pdfcraft single_instance
       - name: Build and package
         shell: pwsh
         env:
