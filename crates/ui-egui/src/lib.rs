@@ -118,6 +118,8 @@ use persist::recovery;
 pub use persist::units;
 #[cfg(not(target_arch = "wasm32"))]
 pub use persist::window_state;
+#[cfg(not(target_arch = "wasm32"))]
+use platform::drag_out;
 use platform::drag_pointer;
 #[cfg(not(target_arch = "wasm32"))]
 pub use platform::file_watch;
@@ -324,6 +326,9 @@ pub struct PdfCraftApp {
     /// Colour for new Fill & Sign text and dates, kept across launches.
     pub fill_text_color: [f64; 3],
     pub dialog: Option<Dialog>,
+    /// The file the pages last dragged out of the window were written to, for the system's drag
+    /// to carry to Finder or File Explorer.
+    pub dragged_out: Option<std::path::PathBuf>,
     /// How to ask for the latest release (the desktop app sets it; see `updates`).
     pub(crate) updates: updates::Updates,
     /// Lists the Print dialog's printers in the background (the desktop app sets it; see

@@ -6165,6 +6165,48 @@ fn a_thumbnail_drag_that_ends_off_the_panel_or_outlives_the_pages_is_dropped() {
     assert!(h.state().views[0].panel_drag.is_none());
 }
 
+/// The text of each page of a PDF's bytes.
+fn file_texts(bytes: Vec<u8>) -> Vec<String> {
+    let mut r = PageRenderer::new(std::sync::Arc::new(bytes), Default::default());
+    (0..r.page_count())
+        .map(|p| {
+            let out = r.render(RenderRequest { page: p, kind: RequestKind::Text, scale: 1.0, ..Default::default() });
+            out.text.map(|t| t.plain_text().trim().to_string()).unwrap_or_default()
+        })
+        .collect()
+}
+
+#[test]
+fn pages_dragged_out_of_the_window_become_a_pdf_of_their_own() {
+    let mut h = harness(4, |app| app.right = Some(pdfcraft_ui_egui::RightPanel::Pages));
+    let before = page_texts(h.state());
+    // One page past the window's right edge: a file of that page alone, for Finder or Explorer.
+    let from = panel_thumb(&h, "Page 2");
+    drag(&mut h, from, egui::pos2(1500.0, from.y));
+    let path = h.state_mut().dragged_out.take().expect("a file for the system's drag");
+    assert_eq!(path.file_name().unwrap(), "doc (page 2).pdf");
+    assert_eq!(file_texts(std::fs::read(&path).unwrap()), [before[1].clone()]);
+    assert_eq!(page_texts(h.state()), before, "the document keeps its pages");
+    assert!(!dirty(&h));
+    let view = &h.state().views[0];
+    assert!(view.panel_drag.is_none() && view.drag_out.is_none());
+    // Pages picked together leave as one file of them all, in page order.
+    h.state_mut().views[0].select_pages(&[2, 0]);
+    h.run_steps(2);
+    let from = panel_thumb(&h, "Page 3");
+    drag(&mut h, from, egui::pos2(from.x, -40.0));
+    let path = h.state_mut().dragged_out.take().expect("a file for the system's drag");
+    assert_eq!(path.file_name().unwrap(), "doc (pages 1, 3).pdf");
+    assert_eq!(file_texts(std::fs::read(&path).unwrap()), [before[0].clone(), before[2].clone()]);
+    assert_eq!(page_texts(h.state()), before);
+    // Dropped inside the window, pages move as before and no file is made.
+    let (from, to) = (panel_thumb(&h, "Page 3"), panel_thumb(&h, "Page 1") - egui::vec2(0.0, 40.0));
+    h.state_mut().views[0].clear_page_selection(None);
+    drag(&mut h, from, to);
+    assert!(h.state().dragged_out.is_none());
+    assert_eq!(page_texts(h.state())[0], before[2]);
+}
+
 /// A Pages panel thumbnail (the rightmost node with that label).
 fn panel_thumb(h: &Harness<'static, PdfCraftApp>, label: &str) -> egui::Pos2 {
     h.get_all_by_label(label).map(|n| n.rect()).max_by(|a, b| a.left().total_cmp(&b.left())).expect("the thumbnail").center()

@@ -735,6 +735,48 @@ impl PdfCraftApp {
         }
     }
 
+    /// Pages dragged out of the window from the Pages panel ([`crate::DocView::drag_out`]):
+    /// write them as a new PDF, named after the document and the pages, and return its path and
+    /// how many pages it has, for the system's drag to carry to where they are dropped.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn write_dragged_pages(&mut self) -> Option<(std::path::PathBuf, usize)> {
+        let i = self.active?;
+        let pages = self.views.get_mut(i)?.drag_out.take()?;
+        // What's typed in a form field is part of the document (#166).
+        if pages.is_empty() || !self.commit_form_typing() {
+            return None;
+        }
+        let id = self.views.get(i)?.id;
+        let stem = self.session.get(id).map(|d| file_stem_from_user(strip_pdf(&d.name))).unwrap_or_default();
+        let name = dragged_pages_name(&stem, &pages);
+        let bytes = match self.session.extract(id, &pages) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.notify_fmt("Couldn't extract pages: {e}", &[("e", &e.to_string())]);
+                return None;
+            }
+        };
+        match crate::drag_out::write(&name, &bytes) {
+            Ok(path) => Some((path, pages.len())),
+            Err(e) => {
+                self.notify_fmt("Couldn't write {name}: {e}", &[("name", &name), ("e", &e.to_string())]);
+                None
+            }
+        }
+    }
+
+    /// Hand the pages dragged out of the window to the system's drag, written as a file
+    /// ([`Self::write_dragged_pages`]). The system keeps the button's release, so egui is given it.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn start_drag_out(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
+        let Some((path, pages)) = self.write_dragged_pages() else { return };
+        self.dragged_out = Some(path.clone());
+        crate::window_controls::pointer_taken_by_desktop(ctx);
+        if let Err(e) = crate::drag_out::start(frame, path, pages) {
+            log::warn!("couldn't drag the pages out of the window: {e}");
+        }
+    }
+
     /// Write named files into a chosen folder (desktop) or as downloads (web).
     pub(crate) fn write_files(&mut self, named: &[(String, Arc<Vec<u8>>)], title: &str) {
         self.write_files_then(named.to_vec(), title, |_| {});
@@ -881,6 +923,23 @@ impl PdfCraftApp {
             Err(e) => self.notify_fmt("Couldn't open the result: {e}", &[("e", &e.to_string())]),
         }
     }
+}
+
+/// The file name pages dragged out of document `stem` take: "Report (page 3).pdf", "Report
+/// (pages 2-5).pdf", "Report (pages 1, 3, 4).pdf", or "Report (12 pages).pdf" for many pages
+/// here and there. `pages` are 0-based and in order; the names count from 1.
+pub(crate) fn dragged_pages_name(stem: &str, pages: &[usize]) -> String {
+    let stem = if stem.trim().is_empty() { "Pages" } else { stem.trim() };
+    let n = |p: &usize| p.saturating_add(1).to_string();
+    let which = match pages {
+        [] => String::new(),
+        [one] => format!(" (page {})", n(one)),
+        [first, .., last] if pages.windows(2).all(|w| w[0].checked_add(1) == Some(w[1])) => format!(" (pages {}-{})", n(first), n(last)),
+        few if few.len() <= 4 => format!(" (pages {})", few.iter().map(n).collect::<Vec<_>>().join(", ")),
+        many => format!(" ({} pages)", many.len()),
+    };
+    let name = format!("{stem}{which}.pdf");
+    if is_plain_file_name(&name) { name } else { format!("Pages{which}.pdf") }
 }
 
 pub(crate) fn strip_pdf(name: &str) -> &str {
@@ -1129,7 +1188,19 @@ impl crate::PdfCraftApp {
 
 #[cfg(test)]
 mod stem_tests {
-    use super::{attachment_file_name, file_stem_from_user, is_plain_file_name};
+    use super::{attachment_file_name, dragged_pages_name, file_stem_from_user, is_plain_file_name};
+
+    #[test]
+    fn dragged_pages_are_named_after_the_document_and_the_pages() {
+        assert_eq!(dragged_pages_name("Report", &[2]), "Report (page 3).pdf");
+        assert_eq!(dragged_pages_name("Report", &[1, 2, 3, 4]), "Report (pages 2-5).pdf");
+        assert_eq!(dragged_pages_name("Report", &[0, 2, 3]), "Report (pages 1, 3, 4).pdf");
+        assert_eq!(dragged_pages_name("Report", &[0, 2, 4, 6, 8]), "Report (5 pages).pdf");
+        assert_eq!(dragged_pages_name("ใบแจ้งหนี้", &[0]), "ใบแจ้งหนี้ (page 1).pdf");
+        assert_eq!(dragged_pages_name("  ", &[0, 1]), "Pages (pages 1-2).pdf");
+        assert_eq!(dragged_pages_name("Report", &[usize::MAX]), format!("Report (page {}).pdf", usize::MAX));
+        assert!(is_plain_file_name(&dragged_pages_name("C:", &[0])));
+    }
 
     #[test]
     fn user_file_names_stay_inside_the_folder_and_writable_everywhere() {

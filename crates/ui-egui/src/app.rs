@@ -68,6 +68,7 @@ impl PdfCraftApp {
             session: Session::new(),
             views: Vec::new(),
             closed_tabs: Vec::new(),
+            dragged_out: None,
             active: None,
             mode: Mode::AllTools,
             default_mode: Mode::AllTools,
@@ -624,7 +625,7 @@ impl eframe::App for PdfCraftApp {
         self.sync_titles(ctx);
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         i18n::set_current(i18n::Lang::from_pref(&self.language));
         // A language change switches stock chrome between LTR and RTL before anything is drawn.
@@ -696,6 +697,10 @@ impl eframe::App for PdfCraftApp {
             }
         });
         self.process_pending_edits();
+        #[cfg(not(target_arch = "wasm32"))]
+        self.start_drag_out(&ctx, frame);
+        #[cfg(target_arch = "wasm32")]
+        let _ = frame;
         palette::show(self, &ctx);
         dialogs::show(self, &ctx);
         self.show_progress(&ctx);

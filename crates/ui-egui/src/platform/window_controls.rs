@@ -243,6 +243,13 @@ fn grab_id() -> egui::Id {
 /// input (`release_after_desktop_grab`).
 pub fn desktop_grab(ctx: &egui::Context, command: egui::ViewportCommand) {
     ctx.send_viewport_cmd(command);
+    pointer_taken_by_desktop(ctx);
+}
+
+/// The desktop has taken the pointer with the primary button held (a window move or resize, or
+/// pages dragged out of the window) and keeps the button's release from the window: give it back
+/// to egui on the next input (`release_after_desktop_grab`).
+pub fn pointer_taken_by_desktop(ctx: &egui::Context) {
     ctx.data_mut(|d| d.insert_temp(grab_id(), ()));
     ctx.request_repaint();
 }

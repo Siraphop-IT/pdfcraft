@@ -86,7 +86,8 @@ pub(super) fn thumbnail_size(ui: &mut egui::Ui, t: &Tokens, view: &mut crate::Do
 /// The page thumbnails. A click goes to the page; ⌘/Ctrl-click and ⇧-click pick several pages
 /// (the selection page commands and Print act on) without moving the document. Right-click
 /// offers Extract, Cut, Copy and Paste on the selection, or on the page clicked; dragging
-/// moves the selection, or the page grabbed, to the gap it is dropped on.
+/// moves the selection, or the page grabbed, to the gap it is dropped on, and dragging it out of
+/// the window (macOS, Windows) drops it as a PDF of its own in Finder or File Explorer.
 pub(super) fn pages(ui: &mut egui::Ui, t: &Tokens, info: &DocInfo, view: &mut crate::DocView, modal: bool, editable: bool, nav: &mut Option<Nav>) {
     let focus_id = ui.make_persistent_id(("pages-keyboard", view.id));
     view.pages_focus_id = Some(focus_id);
@@ -127,7 +128,7 @@ pub(super) fn pages(ui: &mut egui::Ui, t: &Tokens, info: &DocInfo, view: &mut cr
     for (i, p) in info.pages.iter().enumerate() {
         ui.vertical_centered(|ui| {
             let h = w * p.height / p.width.max(1.0);
-            let sense = if editable { Sense::click_and_drag() } else { Sense::click() };
+            let sense = if editable || can_drag_out() { Sense::click_and_drag() } else { Sense::click() };
             let (rect, resp) = ui.allocate_exact_size(vec2(w + 16.0, h + 16.0), sense);
             rows.push(rect);
             if rect.intersects(ui.clip_rect().expand(200.0)) {
@@ -229,7 +230,7 @@ pub(super) fn pages(ui: &mut egui::Ui, t: &Tokens, info: &DocInfo, view: &mut cr
         });
         ui.add_space(4.0);
     }
-    page_drag(ui, t, view, &rows, dropped);
+    page_drag(ui, t, view, &rows, dropped, editable);
     file_drop(ui, t, view, &rows, editable && !modal);
 }
 
@@ -290,17 +291,36 @@ fn moved_index(p: usize, moving: &[usize], to: usize) -> usize {
     }
 }
 
+/// Whether pages dragged out of the window leave as a file (macOS, Windows).
+fn can_drag_out() -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    return crate::drag_out::SUPPORTED;
+    #[cfg(target_arch = "wasm32")]
+    return false;
+}
+
 /// While thumbnails are dragged: a bar on the gap they would go to, the page count by the
-/// pointer, and scrolling near the panel's edges. On release, queue the move.
-fn page_drag(ui: &mut egui::Ui, t: &Tokens, view: &mut crate::DocView, rows: &[Rect], dropped: bool) {
+/// pointer, and scrolling near the panel's edges. On release, queue the move (only when
+/// `editable`). Once the pointer leaves the window, the pages go to the system's drag instead
+/// ([`crate::DocView::drag_out`]), to be dropped as a file of their own.
+fn page_drag(ui: &mut egui::Ui, t: &Tokens, view: &mut crate::DocView, rows: &[Rect], dropped: bool, editable: bool) {
     let Some(mut moving) = view.panel_drag.clone() else { return };
     // A drag that ended while the panel was closed (or elsewhere) leaves nothing to drop.
     if !dropped && !ui.input(|i| i.pointer.primary_down()) {
         view.panel_drag = None;
         return;
     }
+    moving.sort_unstable();
+    moving.dedup();
+    // Past the window's edge (or gone from it): the system carries the pages on from here.
+    let window = ui.ctx().content_rect();
+    if !dropped && can_drag_out() && ui.input(|i| i.pointer.latest_pos()).is_none_or(|p| !window.contains(p)) {
+        view.panel_drag = None;
+        view.drag_out = Some(moving);
+        return;
+    }
     let pointer = ui.input(|i| i.pointer.interact_pos());
-    let gap = pointer.and_then(|p| panel_gap(rows, p.y));
+    let gap = pointer.and_then(|p| panel_gap(rows, p.y)).filter(|_| editable);
     if let (Some(gap), Some(first), Some(last)) = (gap, rows.first(), rows.last()) {
         let y = rows.get(gap).map_or(last.bottom() + 20.0, |r| r.top() - 3.0);
         ui.painter().line_segment([pos2(first.left(), y), pos2(first.right(), y)], Stroke::new(3.0, t.accent));
@@ -323,8 +343,6 @@ fn page_drag(ui: &mut egui::Ui, t: &Tokens, view: &mut crate::DocView, rows: &[R
     }
     view.panel_drag = None;
     let Some(gap) = gap else { return };
-    moving.sort_unstable();
-    moving.dedup();
     let Some(&first) = moving.first() else { return };
     // `to` counts positions without the moving pages.
     let to = gap.saturating_sub(moving.iter().filter(|x| **x < gap).count());

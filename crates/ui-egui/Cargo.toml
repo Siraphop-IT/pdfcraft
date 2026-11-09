@@ -72,6 +72,12 @@ plist = "1.10"
 # the tree through pdfcraft-cli.
 rustix = { version = "1", features = ["fs"] }
 
+[target.'cfg(any(target_os = "macos", windows))'.dependencies]
+# Pages dragged out of the Pages panel to Finder or File Explorer: starts the system's drag of a
+# file (an NSDraggingSession, OLE DoDragDrop), which needs unsafe our workspace forbids, behind a
+# safe call. MIT/Apache-2.0 (CrabNebula). Pinned exactly: review the diff before bumping.
+drag = "=2.1.1"
+
 [target.'cfg(windows)'.dependencies]
 # Auto interface language: the Windows display language, without starting a process.
 sys-locale = "0.3"

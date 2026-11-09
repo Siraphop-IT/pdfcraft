@@ -470,6 +470,9 @@ pub struct DocView {
     /// Where Save first offers to save a new document that has no file of its own yet (a
     /// combined file: the folder of the files it was made from).
     pub(crate) save_folder: Option<std::path::PathBuf>,
+    /// Pages dragged out of the window from the Pages panel, for the app to write as a file and
+    /// hand to the system's drag (Finder, File Explorer): in document order.
+    pub drag_out: Option<Vec<usize>>,
     /// Two-page view: show the first page alone, as a cover (View ▸ Page display).
     pub cover: bool,
     /// Previous view / Next view: pages visited before (and after, once going back).
@@ -899,6 +902,7 @@ impl DocView {
             close_requested: false,
             snapshot: None,
             save_folder: None,
+            drag_out: None,
             cover: false,
             back: Vec::new(),
             forward: Vec::new(),
