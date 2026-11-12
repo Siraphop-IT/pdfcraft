@@ -204,9 +204,17 @@ pub(crate) fn thai_rewrite(
             return Some(attempt);
         }
     }
-    pdfcraft_fonts::document_thai_font()?;
+    let thai = pdfcraft_fonts::document_thai_font()?;
     let mut attempt = doc.clone();
-    let bundled = pdfcraft_edit::BlockStyle { resource: Some(pdfcraft_edit::text::BUILTIN_THAI_FONT.to_owned()), ..style.clone() };
+    // At the source's size the bundled face is larger and wider than the Thai faces documents use
+    // (TH Sarabun): drawn no wider than the paragraph's own runs, it keeps to its cell.
+    // Its own rows keep their baselines: a size alone would space them 1.5 × apart.
+    let (size, line_spacing) = match (style.size, style.line_spacing) {
+        (None, None) => pdfcraft_edit::text::fit_to_face(doc, page, block, thai.bytes).map_or((None, None), |(size, spacing)| (Some(size), spacing)),
+        asked => asked,
+    };
+    let bundled =
+        pdfcraft_edit::BlockStyle { resource: Some(pdfcraft_edit::text::BUILTIN_THAI_FONT.to_owned()), size, line_spacing, ..style.clone() };
     pdfcraft_edit::rewrite_block(&mut attempt, page, block, Some(text), &bundled).ok()?;
     Some(attempt)
 }

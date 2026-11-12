@@ -232,11 +232,17 @@ fn choose_rewrite_path(
             "formatting part of right-to-left (Hebrew) text, or choosing a document font for it, isn't supported yet".into(),
         ));
     }
-    // Turned text is rewritten in its own text space by the single-style path. Styled layout uses
-    // page x-coordinates and cannot safely apply those operations to rotated runs.
+    // Turned text is rewritten in its own text space by the single-style path. The styled layout
+    // works in the paragraph's frame, along and across its baseline (`TextLine::frame_rect`), so
+    // BMU PDF also takes a paragraph turned as one there when a font or part of it is formatted:
+    // Thai the source subset lacks, on a landscape form drawn turned on a page shown turned (a
+    // ภ.ง.ด. attachment), or a turned watermark. Rows turned different ways share no frame.
     let upright = members.iter().all(|line| line.upright());
-    if !upright && (!style.ranges.is_empty() || style.resource.is_some()) {
-        return Err(EditError::Invalid("formatting part of turned text, or choosing a document font for it, isn't supported yet".into()));
+    let one_direction = members.iter().all(|line| same_direction(line, first));
+    if !one_direction && (!style.ranges.is_empty() || style.resource.is_some()) {
+        return Err(EditError::Invalid(
+            "formatting part of text turned different ways, or choosing a document font for it, isn't supported yet".into(),
+        ));
     }
     let visual_indic = members.iter().any(|line| line.visual_order);
     let has_special_text = text.is_some_and(|draft| {
@@ -251,11 +257,17 @@ fn choose_rewrite_path(
     let explicit_styled_text = !style.ranges.is_empty() || style.resource.is_some();
     Ok(RewriteDispatch {
         upright,
-        use_styled_path: upright
+        use_styled_path: one_direction
             && !hebrew
             && !visual_indic
-            && (explicit_styled_text || (source_requires_styled_path && style.family.is_none() && style.bold.is_none())),
+            && (explicit_styled_text || (upright && source_requires_styled_path && style.family.is_none() && style.bold.is_none())),
     })
+}
+
+/// Whether `line`'s baseline runs the way `other`'s does.
+fn same_direction(line: &TextLine, other: &TextLine) -> bool {
+    let (a, b) = (line.direction(), other.direction());
+    (a.0 - b.0).abs() < 1e-3 && (a.1 - b.1).abs() < 1e-3
 }
 
 /// The paragraph's text for writing back: explicit line breaks stay (#1443), and so does each typed
@@ -313,7 +325,7 @@ impl ParaGeometry {
 
 /// How far a baseline starting at `origin` and running along `direction` goes before it is 36 pt
 /// from the page edge `low` or `high`.
-fn margin_reach(origin: f64, direction: f64, low: f64, high: f64) -> f64 {
+pub(crate) fn margin_reach(origin: f64, direction: f64, low: f64, high: f64) -> f64 {
     if direction > 1e-6 {
         (high - 36.0 - origin) / direction
     } else if direction < -1e-6 {
@@ -1181,4 +1193,37 @@ pub(crate) fn translate_blocks(doc: &mut Document, page: usize, indexes: &[usize
     let contents = rewritten_contents(doc, &streams, data);
     doc.update_dict(p.obj, |d| d.set(b"Contents".to_vec(), contents))?;
     Ok(())
+}
+
+/// BMU PDF: a size, in points, and a line spacing (× that size) that draw paragraph `block` of
+/// `page` in the face `bytes` no wider than its own runs are drawn, down to 60 % of its size, on
+/// its own rows' baselines. The bundled Thai face (Noto Sans Thai) is far larger than TH Sarabun
+/// at one size: at the source's size, a table cell rewritten in it wraps and runs over the row
+/// below. `None` when the paragraph or a run can't be measured in the face; no line spacing for
+/// a single row.
+pub fn fit_to_face(doc: &Document, page: usize, block: usize, bytes: &[u8]) -> Option<(f64, Option<f64>)> {
+    let lines = text_lines(doc, page).ok()?;
+    let b = group_blocks(&lines).into_iter().nth(block)?;
+    let mut fit = 1.0_f64;
+    for line in b.lines.iter().filter_map(|i| lines.get(*i)) {
+        let text = line.text.trim();
+        if text.is_empty() {
+            continue;
+        }
+        let frame = line.frame_rect();
+        let drawn = frame[2] - frame[0];
+        let natural = pdfcraft_fonts::source_shaping::shape_lenient(bytes, text).ok()?.advance * line.size * line.origin.state.scale;
+        if drawn.is_finite() && natural.is_finite() && drawn > 0.0 && natural > drawn {
+            fit = fit.min(drawn / natural);
+        }
+    }
+    let size = b.size * fit.clamp(0.6, 1.0);
+    if !size.is_finite() || size <= 0.0 {
+        return None;
+    }
+    // The step between the first two rows, across their baselines.
+    let row_start = |row: &Vec<usize>| row.first().and_then(|i| lines.get(*i)).map(|l| l.frame_origin().1);
+    let leading =
+        b.rows.first().and_then(row_start).zip(b.rows.get(1).and_then(row_start)).map(|(a, b)| (a - b).abs()).filter(|d| d.is_finite() && *d > 0.0);
+    Some((size, leading.map(|d| (d / size).clamp(0.5, 5.0))))
 }

@@ -7179,8 +7179,10 @@ fn turned_paragraph_keeps_its_line_breaks_when_a_word_is_added() {
     text::rewrite_block(&mut doc, 0, 0, Some("Only line with several more words added"), &text::BlockStyle::default()).unwrap();
     let blocks = text::text_blocks(&reopen(&doc), 0).unwrap();
     assert_eq!(blocks[0].editor_text, "Only line with several more words added");
-    // Formatting part of turned text isn't laid out yet: refused, not drawn along the page's x axis.
-    let mut doc = text_page("BT /F1 12 Tf 0 1 -1 0 300 300 Tm (Only line) Tj ET");
+    // BMU PDF: formatting part of turned text is laid out along its own baseline, not drawn along
+    // the page's x axis.
+    let original = text_page("BT /F1 12 Tf 0 1 -1 0 300 300 Tm (Only line) Tj ET");
+    let mut doc = original.clone();
     let range = text::RangeStyle {
         range: 0..4,
         family: None,
@@ -7192,7 +7194,19 @@ fn turned_paragraph_keeps_its_line_breaks_when_a_word_is_added() {
         scale: None,
     };
     let style = text::BlockStyle { ranges: vec![range], ..Default::default() };
-    assert!(text::rewrite_block(&mut doc, 0, 0, Some("Only line"), &style).is_err());
+    text::rewrite_block(&mut doc, 0, 0, Some("Only line"), &style).unwrap();
+    let reopened = reopen(&doc);
+    assert_eq!(text::text_blocks(&reopened, 0).unwrap()[0].editor_text, "Only line");
+    let (before, after) = (text::text_lines(&original, 0).unwrap(), text::text_lines(&reopened, 0).unwrap());
+    let span =
+        |lines: &[text::TextLine]| lines.iter().map(|l| l.rect).reduce(|a, b| [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])]);
+    let (was, now) = (span(&before).unwrap(), span(&after).unwrap());
+    // Still a column running up from where it started, as tall again as the larger "Only"
+    // makes it, and no wider than the 20 pt text's height: not a row along the page's x axis.
+    assert!((now[1] - was[1]).abs() < 0.5, "starts where it did: {now:?} {was:?}");
+    assert!(now[3] - now[1] > was[3] - was[1], "runs further up: {now:?} {was:?}");
+    assert!(now[2] - now[0] < 25.0, "stays a column: {now:?}");
+    assert!(after.iter().all(|l| l.rect[0] > 270.0 && l.rect[2] < 310.0), "every run on the original column: {after:?}");
 }
 
 /// A paragraph drawn at a slant rewraps at the width its rows have along their baseline, as the

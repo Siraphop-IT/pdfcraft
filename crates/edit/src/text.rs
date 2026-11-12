@@ -56,11 +56,11 @@ use interp::{Origin, Paint, union};
 use lines::page_dict;
 pub(crate) use lines::{FormBudget, content_streams, content_streams_within, dict_in_place, form_call, resource_dict, rewritten_contents, splice};
 pub use lines::{MAX_FORM_DEPTH, MAX_FORM_VISITS, glyph_text_lines, text_lines};
-pub use rewrite::{LineEdit, replace_line, rewrite_block};
+pub use rewrite::{LineEdit, fit_to_face, replace_line, rewrite_block};
 use rewrite::{coincident_ops, rewrite_block_from};
+pub(crate) use rewrite::{margin_reach, reveal_ops, selectable_blocks, translate_blocks};
 #[cfg(test)]
 pub(crate) use rewrite::{replace_line_with_limit, rewrite_block_with_limit};
-pub(crate) use rewrite::{reveal_ops, selectable_blocks, translate_blocks};
 
 /// One line of existing text.
 #[derive(Clone, Debug, PartialEq)]

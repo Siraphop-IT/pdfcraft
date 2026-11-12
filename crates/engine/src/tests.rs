@@ -10261,3 +10261,111 @@ fn a_paragraph_stamped_on_every_page_is_found_on_the_others() {
     assert_eq!(texts(1), ["Body 1"]);
     assert_eq!(texts(2), ["Body 2", "CHECK COPY"], "the one somewhere else stays");
 }
+
+/// A one-page PDF with `page` added to its page dictionary, drawing `content` in Helvetica (`/F1`).
+fn one_page_with(page: &str, content: &str) -> Vec<u8> {
+    let objs = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+        format!("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] {page} /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>"),
+        format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>".to_string(),
+    ];
+    let mut out = b"%PDF-1.7\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, o) in objs.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend_from_slice(format!("{} 0 obj\n{o}\nendobj\n", i + 1).as_bytes());
+    }
+    let xref = out.len();
+    out.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).as_bytes());
+    for o in offsets {
+        out.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
+    }
+    out.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objs.len() + 1).as_bytes());
+    out
+}
+
+/// BMU PDF: Thai typed into a ภ.ง.ด.53 attachment (a landscape page shown turned, its content
+/// drawn turned back) failed whenever its font lacked a letter: the bundled Thai face can only be
+/// chosen through the styled layout, which refused turned text. It now lays the paragraph out
+/// along its own baseline, so the new Thai is written where the old text ran.
+#[test]
+fn thai_the_font_lacks_is_typed_into_text_on_a_page_shown_turned() {
+    let (mut s, id) = {
+        let mut s = Session::new().with_clock(|| 1_700_000_000);
+        let pdf = one_page_with("/Rotate 90", "q 0 1 -1 0 595 0 cm BT /F1 12 Tf 1 0 0 1 100 400 Tm (Total) Tj ET Q");
+        let id = s.open("turned.pdf", None, Arc::new(pdf), None).expect("opens");
+        (s, id)
+    };
+    let thai = "ยอดรวม ทดสอบ";
+    let edit = Edit::EditTextBlock { page: 0, block: 0, text: thai.into(), style: pdfcraft_edit::BlockStyle::default() };
+    if pdfcraft_fonts::document_thai_font().is_none() {
+        eprintln!("skipping: built without craft-fonts (set CRAFT_FONTS_DIR), so there is no Thai face to fall back on");
+        assert!(s.apply(id, edit).is_err());
+        return;
+    }
+    s.apply(id, edit).expect("the bundled Thai face writes the turned paragraph");
+    let saved = s.save_bytes(id).unwrap();
+    let again = s.open("again.pdf", None, saved, None).unwrap();
+    let doc = s.get(again).unwrap();
+    assert_eq!(doc.text_blocks(0).iter().map(|b| b.text.as_str()).collect::<Vec<_>>(), [thai]);
+    // The content maps (x, y) to (595 - y, x): the row starts at user (195, 100) and runs up the
+    // page in a column, where "Total" was, not along the page's x axis.
+    for line in doc.text_lines(0) {
+        assert!(line.rect[0] > 170.0 && line.rect[2] < 200.0, "on the original column: {:?}", line.rect);
+        assert!(line.rect[1] > 95.0, "starts where the old text did: {:?}", line.rect);
+    }
+    let rows = doc.text_lines(0).iter().map(|l| l.rect).reduce(|a, b| [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])]).unwrap();
+    assert!(rows[3] - rows[1] > rows[2] - rows[0], "a column, taller than wide: {rows:?}");
+}
+
+/// BMU PDF: a two-row cell of a ภ.ง.ด.53 table (the page shown turned, the table between its
+/// rows drawn with its own line width) rewritten in the bundled Thai face keeps its rows on their
+/// baselines at a size no wider than its own text, and its two rows typed into one are one run
+/// in that face, not refused as "mixed contextual runs".
+#[test]
+fn a_turned_two_row_cell_takes_thai_on_its_own_rows() {
+    let content = "q 0 1 -1 0 595 0 cm BT /F1 10 Tf 1 0 0 1 100 400 Tm (Total amount here) Tj ET 0.5 w [1 1] 0 d 90 390 m 190 390 l S \
+                   BT /F1 10 Tf 1 0 0 1 100 383 Tm (Sum) Tj ET Q";
+    let open = || {
+        let mut s = Session::new().with_clock(|| 1_700_000_000);
+        let id = s.open("cell.pdf", None, Arc::new(one_page_with("/Rotate 90", content)), None).expect("opens");
+        (s, id)
+    };
+    let (s, id) = open();
+    let source = s.get(id).unwrap().text_lines(0);
+    assert_eq!(s.get(id).unwrap().text_blocks(0).iter().map(|b| b.editor_text.as_str()).collect::<Vec<_>>(), ["Total amount here\nSum"]);
+    if pdfcraft_fonts::document_thai_font().is_none() {
+        eprintln!("skipping: built without craft-fonts (set CRAFT_FONTS_DIR), so there is no Thai face to fall back on");
+        return;
+    }
+    let edit = |text: &str| Edit::EditTextBlock { page: 0, block: 0, text: text.into(), style: pdfcraft_edit::BlockStyle::default() };
+    let reopened = |mut s: Session, id| {
+        let saved = s.save_bytes(id).unwrap();
+        let again = s.open("again.pdf", None, saved, None).unwrap();
+        let doc = s.get(again).unwrap();
+        (doc.text_blocks(0), doc.text_lines(0))
+    };
+
+    let (mut s, id) = open();
+    s.apply(id, edit("ยอด\nรวม")).expect("each row in the bundled Thai face");
+    let (blocks, lines) = reopened(s, id);
+    assert_eq!(blocks.iter().map(|b| b.editor_text.as_str()).collect::<Vec<_>>(), ["ยอด\nรวม"]);
+    // The rows run up the page, so their glyphs hang from the baseline towards +x, as an upright
+    // row's descend below it: each row's ink ends just past its old baseline (the descent of
+    // ยอด/รวม, about 1 pt), not an extra row's leading away.
+    for (row, (now, was)) in lines.iter().zip(&source).enumerate() {
+        let past = now.rect[2] - was.baseline()[0];
+        assert!((0.0..2.5).contains(&past), "row {row} sits on its old baseline: {:?} {:?}", now.rect, was.baseline());
+    }
+    assert!(blocks.iter().all(|b| b.size <= 10.0 + 1e-6), "no larger than the source: {:?}", blocks.iter().map(|b| b.size).collect::<Vec<_>>());
+
+    let (mut s, id) = open();
+    // Words kept from both rows, joined by Thai: one row of two source runs.
+    s.apply(id, edit("Total amount here ยอด Sum")).expect("the two rows typed into one are one run in the bundled face");
+    let (blocks, _) = reopened(s, id);
+    // Rewrapped to the cell's width, between Thai words: every letter is there, in order.
+    let letters: String = blocks.iter().flat_map(|b| b.text.chars()).filter(|c| !c.is_whitespace()).collect();
+    assert_eq!(letters, "TotalamounthereยอดSum");
+}

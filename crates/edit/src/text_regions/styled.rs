@@ -1,9 +1,9 @@
-use super::grouping::{across, is_centred, row_rect};
+use super::grouping::{across, is_centred};
 use super::{
     BlockStyle, CraftFont, Dict, Document, EditError, HashMap, LineEdit, MAX_TYPE3_GLYPHS, Matrix, Metrics, Object, Op, PdfString, Pieces,
-    RangeStyle, TextBlock, TextLine, Type3Glyph, coincident_ops, content_streams, fallback_face, japanese_glyph_from, needs_type3, no_fallback_font,
-    no_glyph_for, page_dict, reveal_ops, rewritten_contents, source_encodes, source_family, source_program, source_show, source_space, source_width,
-    splice, type3_faces, type3_glyph, write_type3_glyphs,
+    RangeStyle, TextBlock, TextLine, Type3Glyph, coincident_ops, content_streams, fallback_face, japanese_glyph_from, margin_reach, needs_type3,
+    no_fallback_font, no_glyph_for, page_dict, reveal_ops, rewritten_contents, source_encodes, source_family, source_program, source_show,
+    source_space, source_width, splice, type3_faces, type3_glyph, union, write_type3_glyphs,
 };
 
 // The draft is capped at 4 MiB; also bound the outline data prepared across all fallback faces.
@@ -130,6 +130,10 @@ impl CharacterPreparation<'_> {
         let mut substituted = None;
         let mut fallback = FallbackBuilder::new(max_glyphs);
         let mut outlined_thai = std::collections::HashSet::new();
+        // BMU PDF: the draft-only outline name of each source run, so the spans of one run (a
+        // row typing split around an untouched word, or runs merged by `merge_alike_runs`) are
+        // one face and one shaped run, as their shared style is.
+        let mut outline_names: HashMap<usize, String> = HashMap::new();
         let thai_choice = builtin_thai_choice(fonts);
         let mut resolver = FontResolver { doc, fonts, metrics, full_faces: HashMap::new(), programs: HashMap::new() };
         for (range, index) in spans {
@@ -153,7 +157,9 @@ impl CharacterPreparation<'_> {
             } else {
                 selected.is_none() && matching_thai_outline(resolver.doc, resolver.fonts, source, span)
             };
-            let outline_name = if use_thai_outlines {
+            let outline_name = if let Some(name) = outline_names.get(&index).filter(|_| use_thai_outlines) {
+                Some(name.clone())
+            } else if use_thai_outlines {
                 // A draft-only name prevents this choice from affecting another style span that
                 // explicitly selects the original resource. It is never saved into the PDF.
                 let mut name = format!("PCOutlineThai{index}");
@@ -169,6 +175,7 @@ impl CharacterPreparation<'_> {
                     resolver.metrics.insert(name.clone(), m);
                 }
                 outlined_thai.insert(name.clone());
+                outline_names.insert(index, name.clone());
                 Some(name)
             } else {
                 None
@@ -379,7 +386,8 @@ fn calibration_factors(
                 * across(source);
             let changed_face =
                 style.resource.is_some() || overrides.get(&index).is_some_and(|range| range.family.is_some() || range.resource.is_some());
-            let factor = if nominal > 0.0 && !changed_face { ((source.rect[2] - source.rect[0]) / nominal).clamp(0.5, 2.0) } else { 1.0 };
+            let along = frame_of(source);
+            let factor = if nominal > 0.0 && !changed_face { ((along[2] - along[0]) / nominal).clamp(0.5, 2.0) } else { 1.0 };
             calibration.insert(index, factor);
         }
     }
@@ -449,7 +457,13 @@ fn page_font_metrics(
     (fonts, metrics)
 }
 
-fn paragraph_geometry(doc: &Document, page: &pdfcraft_model::Page, block: &TextBlock, style: &BlockStyle) -> Result<(f64, f64, f64), EditError> {
+fn paragraph_geometry(
+    doc: &Document,
+    page: &pdfcraft_model::Page,
+    block: &TextBlock,
+    lines: &[TextLine],
+    style: &BlockStyle,
+) -> Result<(f64, f64, f64), EditError> {
     if [style.size, style.line_spacing, style.char_spacing, style.scale, style.width].iter().flatten().any(|value| !value.is_finite())
         || style.color.is_some_and(|color| color.iter().any(|value| !value.is_finite()))
     {
@@ -459,12 +473,99 @@ fn paragraph_geometry(doc: &Document, page: &pdfcraft_model::Page, block: &TextB
     if !dx.is_finite() || !dy.is_finite() || style.width.is_some_and(|width| !width.is_finite()) {
         return Err(EditError::Invalid("the paragraph's position and width must be finite".into()));
     }
-    let natural = if block.invisible || block.rows.len() == 1 {
-        (page.crop(doc)[2] - 36.0 - (block.rect[0] + dx)).max(block.rect[2] - block.rect[0])
-    } else {
-        block.rect[2] - block.rect[0]
+    let turned = block.lines.first().and_then(|i| lines.get(*i)).filter(|first| !first.upright());
+    let natural = match turned {
+        // BMU PDF: turned, a single row grows along its baseline up to the page's margin, as
+        // the single-style path's does (`turned_line_width`).
+        Some(first) if block.invisible || block.rows.len() == 1 => {
+            let crop = page.crop(doc);
+            let (ux, uy) = first.direction();
+            let (x0, y0) = (first.origin.x + dx, first.origin.baseline + dy);
+            let reach = margin_reach(x0, ux, crop[0], crop[2]).min(margin_reach(y0, uy, crop[1], crop[3]));
+            let own = block_frame(block, lines);
+            (own[2] - own[0]).max(reach.min(14_400.0))
+        }
+        Some(_) => {
+            let own = block_frame(block, lines);
+            own[2] - own[0]
+        }
+        None if block.invisible || block.rows.len() == 1 => (page.crop(doc)[2] - 36.0 - (block.rect[0] + dx)).max(block.rect[2] - block.rect[0]),
+        None => block.rect[2] - block.rect[0],
     };
     Ok((dx, dy, style.width.unwrap_or(natural).clamp(1.0, 14_400.0)))
+}
+
+/// BMU PDF: the draft's `spans` with each source run of the paragraph drawn exactly like an earlier one
+/// (size, matrix and paint; only the font may differ, as subsets of one face do) attributed to
+/// that earlier run. Called when one face is chosen for the whole paragraph: a row is then one
+/// run in that face, which Thai shaping needs whole so a mark stays with its letter, instead of a
+/// row refused as "mixed contextual runs" because JasperReports wrote it in pieces or the typing
+/// joined two rows.
+fn merge_alike_runs(spans: Vec<(std::ops::Range<usize>, usize)>, block: &TextBlock, lines: &[TextLine]) -> Vec<(std::ops::Range<usize>, usize)> {
+    let drawn_alike = |a: &TextLine, b: &TextLine| {
+        let linear = |l: &TextLine| {
+            let m = Matrix(l.origin.tm).then(&Matrix(l.origin.ctm)).0;
+            [m[0], m[1], m[2], m[3]]
+        };
+        // The stroke state (line width, dash: what JasperReports sets drawing the table between
+        // two cells) matters only to text that is stroked (`Tr` 1, 2, 5 or 6).
+        let paint = |l: &TextLine, like: &TextLine| {
+            let mut state = l.origin.state.clone();
+            state.font = None;
+            // Colour operators compare by what they set, not where in the stream they are.
+            let same_ops = |x: &[Op], y: &[Op]| x.len() == y.len() && x.iter().zip(y).all(|(x, y)| x.op == y.op && x.operands == y.operands);
+            if same_ops(&state.fill, &like.origin.state.fill) {
+                state.fill.clone_from(&like.origin.state.fill);
+            }
+            if same_ops(&state.stroke, &like.origin.state.stroke) {
+                state.stroke.clone_from(&like.origin.state.stroke);
+            }
+            if !matches!(state.render_mode, 1 | 2 | 5 | 6) {
+                state.stroke.clone_from(&like.origin.state.stroke);
+                state.line_width = like.origin.state.line_width;
+                state.dash.clone_from(&like.origin.state.dash);
+                state.line_cap = like.origin.state.line_cap;
+            }
+            state
+        };
+        a.size == b.size && a.color == b.color && linear(a) == linear(b) && paint(a, b) == paint(b, b)
+    };
+    // Each run is compared with the first run of each look found so far, not with every earlier
+    // run: a paragraph of thousands of runs drawn a few ways costs a few comparisons a run.
+    let mut looks: Vec<usize> = Vec::new();
+    let mut first_alike: HashMap<usize, usize> = HashMap::new();
+    for index in &block.lines {
+        let Some(line) = lines.get(*index) else { continue };
+        match looks.iter().find(|look| lines.get(**look).is_some_and(|o| drawn_alike(o, line))) {
+            Some(look) => {
+                first_alike.insert(*index, *look);
+            }
+            None => looks.push(*index),
+        }
+    }
+    spans.into_iter().map(|(range, index)| (range, first_alike.get(&index).copied().unwrap_or(index))).collect()
+}
+
+/// BMU PDF: a source run's box along and across its baseline: its own box when it is upright,
+/// so upright text is laid out exactly as before, and its frame ([`TextLine::frame_rect`]) when
+/// it is turned.
+fn frame_of(line: &TextLine) -> [f64; 4] {
+    if line.upright() { line.rect } else { line.frame_rect() }
+}
+
+/// Where a source run starts, along and across its baseline (see [`frame_of`]).
+fn origin_of(line: &TextLine) -> (f64, f64) {
+    if line.upright() { (line.origin.x, line.origin.baseline) } else { line.frame_origin() }
+}
+
+/// A row's box in its frame ([`frame_of`]).
+fn frame_row_rect(row: &[usize], lines: &[TextLine]) -> Option<[f64; 4]> {
+    row.iter().filter_map(|i| lines.get(*i)).map(frame_of).reduce(union)
+}
+
+/// The paragraph's box in its frame ([`frame_of`]); its own box when no run is found.
+fn block_frame(block: &TextBlock, lines: &[TextLine]) -> [f64; 4] {
+    block.lines.iter().filter_map(|i| lines.get(*i)).map(frame_of).reduce(union).unwrap_or(block.rect)
 }
 
 type WrappedStyledRows = (StyledRows, RowRanges, Vec<usize>, Vec<bool>, Vec<usize>);
@@ -1112,13 +1213,23 @@ pub(crate) fn rewrite_styled_block(
     let source_count = lines.len();
     let styled = apply_range_styles(first, block, lines, draft, &ranges, style);
     let lines = styled.lines.as_slice();
-    let styled_spans = styled.spans;
+    // BMU PDF: one face chosen for the whole paragraph draws its runs drawn alike as one, so a
+    // row JasperReports split into runs, or typing joined from two rows, is shaped once.
+    let styled_spans =
+        if style.resource.is_some() && style.ranges.is_empty() { merge_alike_runs(styled.spans, block, &styled.lines) } else { styled.spans };
     let underlines = styled.underlines;
     let overrides = styled.overrides;
     let p = page_dict(doc, page)?;
     let mut res = p.dict.get(b"Resources").and_then(|resource| doc.resolve(resource).as_dict().cloned()).unwrap_or_default();
     let (mut fonts, mut metrics) = page_font_metrics(doc, &res, block, lines);
-    let (dx, dy, width) = paragraph_geometry(doc, &p, block, style)?;
+    let (dx, dy, width) = paragraph_geometry(doc, &p, block, lines, style)?;
+    // The paragraph is laid out along and across its baseline ([`frame_of`]) and placed back in
+    // user space: a row turned as one (a landscape form drawn turned) advances along its own
+    // direction. Upright text's frame is user space itself.
+    let turned = !first.upright();
+    let (ux, uy) = if turned { first.direction() } else { (1.0, 0.0) };
+    let to_user = |along: f64, across: f64| if turned { (along * ux - across * uy, along * uy + across * ux) } else { (along, across) };
+    let paragraph_frame = block_frame(block, lines);
     let prepared = CharacterPreparation {
         doc,
         first,
@@ -1251,25 +1362,26 @@ pub(crate) fn rewrite_styled_block(
     let marked = kept.iter().all(|row| !*row);
     push_whole_paragraph_marker(&mut block_ops, marked, "BMC");
     let crop = p.crop(doc);
-    let centered = is_centred(block, lines, (crop[0] + crop[2]) / 2.0, first.size);
+    // The page's centre is across its x axis, which a turned paragraph doesn't run along.
+    let centered = !turned && is_centred(block, lines, (crop[0] + crop[2]) / 2.0, first.size);
     let source_leading = block
         .rows
         .windows(2)
         .filter_map(|rows| {
             let a = rows[0].first().and_then(|i| lines.get(*i))?;
             let b = rows[1].first().and_then(|i| lines.get(*i))?;
-            Some((a.origin.baseline - b.origin.baseline).abs())
+            Some((origin_of(a).1 - origin_of(b).1).abs())
         })
         .rfind(|v| *v > 0.0)
         .unwrap_or(first.size * 1.5);
-    let mut baseline = first.origin.baseline;
+    let mut baseline = origin_of(first).1;
     for (row_index, row) in rows.iter().enumerate() {
         let anchor = block.rows.get(row_index).and_then(|r| r.first()).and_then(|i| lines.get(*i));
         if style.line_spacing.is_none()
             && style.size.is_none()
             && let Some(anchor) = anchor
         {
-            baseline = anchor.origin.baseline;
+            baseline = origin_of(anchor).1;
         }
         let anchor = anchor.unwrap_or(first);
         if kept.get(row_index).copied().unwrap_or(false) {
@@ -1284,8 +1396,8 @@ pub(crate) fn rewrite_styled_block(
         // The row's own alignment, or the paragraph's.
         let asked = row_lines.get(row_index).and_then(|l| style.aligns.get(*l)).copied().flatten().or(style.align);
         let align = asked.unwrap_or(if centered { crate::added::Align::Center } else { crate::added::Align::Left });
-        let original_rect = block.rows.get(row_index).and_then(|row| row_rect(row, lines)).unwrap_or(block.rect);
-        let left = if style.width.is_none() && asked.is_none() { original_rect[0] } else { block.rect[0] };
+        let original_rect = block.rows.get(row_index).and_then(|row| frame_row_rect(row, lines)).unwrap_or(paragraph_frame);
+        let left = if style.width.is_none() && asked.is_none() { original_rect[0] } else { paragraph_frame[0] };
         let available = if style.width.is_none() && asked.is_none() { original_rect[2] - original_rect[0] } else { width };
         let mut x = left
             + match align {
@@ -1320,7 +1432,9 @@ pub(crate) fn rewrite_styled_block(
             }
             let inverse = Matrix(o.ctm).invert().ok_or_else(|| EditError::Invalid("the paragraph has a singular transform".into()))?;
             let mut tm = Matrix(source.origin.tm).then(&Matrix(source.origin.ctm)).then(&inverse).0;
-            let (ax, ay) = back.apply(x - source.origin.x, baseline - source.origin.baseline);
+            let (along, across) = origin_of(source);
+            let (ux_move, uy_move) = to_user(x - along, baseline - across);
+            let (ax, ay) = back.apply(ux_move, uy_move);
             tm[4] += ax;
             tm[5] += ay;
             let mut segment_width = segment_advances.get(&(row_index, pos)).copied().unwrap_or(0.0);
@@ -1371,8 +1485,9 @@ pub(crate) fn rewrite_styled_block(
             if underlines.get(&item.1).copied().or(style.underline) == Some(true) {
                 let [r, g, b] = overrides.get(&item.1).and_then(|r| r.color).or(style.color).unwrap_or(source.color);
                 let underline_size = size_of(source, item.1) * source.origin.k;
-                let (x0, y0) = back.apply(x - o.ctm[4], baseline - o.ctm[5] - underline_size * 0.12);
-                let (x1, y1) = back.apply(x + segment_width - o.ctm[4], baseline - o.ctm[5] - underline_size * 0.12);
+                let (start, end) = (to_user(x, baseline - underline_size * 0.12), to_user(x + segment_width, baseline - underline_size * 0.12));
+                let (x0, y0) = back.apply(start.0 - o.ctm[4], start.1 - o.ctm[5]);
+                let (x1, y1) = back.apply(end.0 - o.ctm[4], end.1 - o.ctm[5]);
                 block_ops.push(Op::new("RG", vec![n(r), n(g), n(b)]));
                 block_ops.push(Op::new("w", vec![n(underline_size * 0.06 / o.ctm[2].hypot(o.ctm[3]).max(1e-6))]));
                 block_ops.push(Op::new("m", vec![n(x0), n(y0)]));
