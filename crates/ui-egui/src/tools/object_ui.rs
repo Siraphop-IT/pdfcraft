@@ -1,7 +1,7 @@
 //! Same-page mixed selection in Edit a PDF. Source references belong to one document
 //! generation; a drag previews geometry and commits one engine edit on release.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use egui::{Color32, Pos2, Rect, Stroke};
 use pdfcraft_engine::{Document, Edit, EditableObject, MAX_MOVE_OBJECTS, ObjectKind, ObjectTarget};
@@ -423,8 +423,12 @@ pub(crate) fn nudge_keys(ctx: &egui::Context, view: &mut DocView, doc: &Document
 /// Delete (or Backspace) removes the selected objects, as in Acrobat: a paragraph selected by its
 /// frame, or everything an area selection took, goes at once instead of one typed character at a
 /// time.
-pub(crate) fn delete_keys(ctx: &egui::Context, view: &mut DocView) {
-    if ctx.egui_wants_keyboard_input() || view.pending_edit.is_some() || view.objects.gesture.is_some() {
+///
+/// BMU PDF: text that other pages draw again in the same place (a watermark another program
+/// stamped on each page) waits in `delete_everywhere` instead, for the app to ask whether its
+/// copies go too.
+pub(crate) fn delete_keys(ctx: &egui::Context, view: &mut DocView, doc: &Document) {
+    if ctx.egui_wants_keyboard_input() || view.pending_edit.is_some() || view.delete_everywhere.is_some() || view.objects.gesture.is_some() {
         return;
     }
     let Some(page) = view.objects.page.filter(|_| !view.objects.selected.is_empty()) else { return };
@@ -434,7 +438,49 @@ pub(crate) fn delete_keys(ctx: &egui::Context, view: &mut DocView) {
     }
     // The selection stays until the edit applies: `prepare` clears it when the document changes,
     // and a refused delete (text used as a clipping path) leaves it selected.
-    view.pending_edit = delete_edit(page, view.objects.selected.iter().map(|o| o.target).collect());
+    let targets: Vec<ObjectTarget> = view.objects.selected.iter().map(|o| o.target).collect();
+    let Some(here) = delete_edit(page, targets.clone()) else { return };
+    let mut copies: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
+    for t in targets.iter().filter(|t| t.kind == ObjectKind::Text) {
+        for (other, block) in doc.same_paragraph_elsewhere(page, t.index) {
+            copies.entry(other).or_default().insert(block);
+        }
+    }
+    if copies.is_empty() {
+        view.pending_edit = Some(here);
+    } else {
+        view.delete_everywhere = Some(DeleteEverywhere { pages: copies.len(), everywhere: everywhere_edit(here.clone(), &copies), here });
+    }
+}
+
+/// BMU PDF: a deletion whose text other pages draw again in the same place, waiting for
+/// [`Dialog::DeleteEverywhere`](crate::Dialog::DeleteEverywhere).
+#[derive(Clone, Debug)]
+pub(crate) struct DeleteEverywhere {
+    /// What was selected, on its page only.
+    pub(crate) here: Edit,
+    /// That and its copies on the other pages, as one undo step.
+    pub(crate) everywhere: Edit,
+    /// How many other pages have a copy.
+    pub(crate) pages: usize,
+}
+
+/// `here`, then the paragraphs `copies` names on other pages (page to paragraph indexes), as one
+/// undo step. Each page's paragraphs go from the last to the first, as in [`delete_edit`].
+fn everywhere_edit(here: Edit, copies: &BTreeMap<usize, BTreeSet<usize>>) -> Edit {
+    let mut edits = match here {
+        Edit::Batch { edits, .. } => edits,
+        one => vec![one],
+    };
+    for (page, blocks) in copies {
+        edits.extend(blocks.iter().rev().map(|block| Edit::EditTextBlock {
+            page: *page,
+            block: *block,
+            text: String::new(),
+            style: pdfcraft_engine::BlockStyle::default(),
+        }));
+    }
+    Edit::Batch { label: "Delete content".into(), edits }
 }
 
 /// The edit that deletes `targets` (indexes into one inventory of `page`) as one undo step.
@@ -520,6 +566,31 @@ mod tests {
             })
             .collect();
         assert_eq!(order, [('t', 3), ('t', 1), ('i', 0), ('a', 2), ('a', 0)]);
+    }
+
+    /// BMU PDF: the copies on other pages follow what was selected, each page's from its last
+    /// paragraph to its first, all in one undo step; a batch from a mixed selection is not nested.
+    #[test]
+    fn deleting_everywhere_takes_each_pages_copies_last_first_in_one_step() {
+        let copies = BTreeMap::from([(4, BTreeSet::from([2, 7])), (1, BTreeSet::from([3]))]);
+        let one = delete_edit(0, vec![t(ObjectKind::Text, 5)]).unwrap();
+        let Edit::Batch { label, edits } = everywhere_edit(one, &copies) else { panic!("one undo step") };
+        assert_eq!(label, "Delete content");
+        let order: Vec<(usize, usize)> = edits
+            .iter()
+            .map(|e| match e {
+                Edit::EditTextBlock { page, block, text, .. } => {
+                    assert!(text.is_empty());
+                    (*page, *block)
+                }
+                other => panic!("unexpected {}", other.label().wording),
+            })
+            .collect();
+        assert_eq!(order, [(0, 5), (1, 3), (4, 7), (4, 2)]);
+        let mixed = delete_edit(0, vec![t(ObjectKind::Text, 1), t(ObjectKind::Image, 0)]).unwrap();
+        let Edit::Batch { edits, .. } = everywhere_edit(mixed, &copies) else { panic!("one undo step") };
+        assert_eq!(edits.len(), 5);
+        assert!(edits.iter().all(|e| !matches!(e, Edit::Batch { .. })));
     }
 
     #[test]

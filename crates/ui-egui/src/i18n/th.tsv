@@ -2890,3 +2890,7 @@ theme	Appearance	ลักษณะที่ปรากฏ
 	Move to position	ย้ายไปลำดับที่
 	{n} (first)	{n} (แรกสุด)
 	{n} (last)	{n} (ท้ายสุด)
+	Delete from every page?	ลบจากทุกหน้าหรือไม่
+	The same text is in the same place on {n} other pages, as a watermark stamped on each page is.	ข้อความเดียวกันนี้อยู่ที่ตำแหน่งเดียวกันในอีก {n} หน้า เหมือนลายน้ำที่ประทับไว้ทีละหน้า
+	Delete on every page	ลบทุกหน้า
+	This page only	เฉพาะหน้านี้

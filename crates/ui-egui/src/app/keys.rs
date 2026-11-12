@@ -65,7 +65,15 @@ impl PdfCraftApp {
                 && let Some(doc) = self.session.get(self.views[i].id).filter(|d| d.allows_modification())
             {
                 object_ui::nudge_keys(ctx, &mut self.views[i], doc);
-                object_ui::delete_keys(ctx, &mut self.views[i]);
+                object_ui::delete_keys(ctx, &mut self.views[i], doc);
+                // Asked in its own dialog; behind another one it would wait unseen, so it is dropped.
+                if self.views[i].delete_everywhere.is_some() {
+                    match self.dialog {
+                        None => self.dialog = Some(crate::Dialog::DeleteEverywhere),
+                        Some(crate::Dialog::DeleteEverywhere) => {}
+                        Some(_) => self.views[i].delete_everywhere = None,
+                    }
+                }
             } else if let Some(doc) = self.session.get(self.views[i].id).filter(|d| d.allows_annotation()) {
                 comments::nudge_keys(ctx, &mut self.views[i], &doc.info);
             }

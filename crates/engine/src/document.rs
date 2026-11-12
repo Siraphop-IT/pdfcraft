@@ -13,6 +13,10 @@ use crate::{
 #[cfg(test)]
 use crate::{record_link_scan, record_marker_scan};
 
+/// BMU PDF: how many pages [`Document::same_paragraph_elsewhere`] reads. A stamped attachment is
+/// a few pages; reading every page of a long book on a Delete key would stall the window.
+pub const STAMP_SEARCH_PAGES: usize = 200;
+
 pub struct Document {
     pub id: DocId,
     pub name: String,
@@ -258,6 +262,36 @@ impl Document {
     /// Edit a PDF ▸ Edit text: the paragraphs on `page` (0-based).
     pub fn text_blocks(&self, page: usize) -> Vec<pdfcraft_edit::TextBlock> {
         self.editor.as_ref().and_then(|e| e.text_blocks(page).ok()).map(|b| b.as_ref().clone()).unwrap_or_default()
+    }
+
+    /// BMU PDF: the other pages that draw paragraph `block` of `page` again, as `(page, block)`
+    /// in page order: the same text, size and angle in the same place, as a watermark another
+    /// program stamped on each page is (iText's "ใช้สำหรับตรวจสอบความถูกต้อง" over a ภ.ง.ด.
+    /// attachment, with no `/Artifact /Watermark` label for Remove watermark to find). The first
+    /// such paragraph of each page; nothing for blank text. Only the first
+    /// [`STAMP_SEARCH_PAGES`] pages are read, so a long document stays responsive.
+    pub fn same_paragraph_elsewhere(&self, page: usize, block: usize) -> Vec<(usize, usize)> {
+        let Some(editor) = self.editor.as_ref() else { return Vec::new() };
+        let Some(source) = self.text_blocks(page).into_iter().nth(block) else { return Vec::new() };
+        let text = source.text.trim();
+        if text.is_empty() || !source.rect.iter().all(|v| v.is_finite()) {
+            return Vec::new();
+        }
+        // A stamp is placed by the same arithmetic on every page; a little slack covers rounding.
+        let slack = (source.size * 0.25).clamp(0.5, 3.0);
+        let same = |b: &pdfcraft_edit::TextBlock| {
+            b.text.trim() == text
+                && (b.size - source.size).abs() <= 0.01 * source.size.abs().max(1.0)
+                && (b.rotation - source.rotation).abs() <= 0.5
+                && b.rect.iter().zip(source.rect).all(|(a, s)| (a - s).abs() <= slack)
+        };
+        (0..self.info.pages.len().min(STAMP_SEARCH_PAGES))
+            .filter(|p| *p != page)
+            .filter_map(|p| {
+                let blocks = pdfcraft_edit::text_blocks(&editor.cos, p).ok()?;
+                blocks.iter().position(same).map(|b| (p, b))
+            })
+            .collect()
     }
 
     /// Saved measurement annotations, calculated from their geometry and PDF scales, plus

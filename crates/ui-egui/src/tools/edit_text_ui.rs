@@ -31,8 +31,8 @@ use image::{rotate_knob, turn_degrees, turn_degrees_delta};
 use layout::thai_subset_needs_layout;
 #[cfg(test)]
 use layout::{DARK_EDITOR_FILL, contrast};
+use layout::{ShownFrame, color32, editor_galley, editor_job, look_of, luminance, source_look, unseen};
 pub(crate) use layout::{caret_color_on, editor_fill, editor_font, install_source_fonts};
-use layout::{color32, editor_galley, editor_job, look_of, luminance, source_look, unseen};
 
 const ACCENT: Color32 = Color32::from_rgb(0x14, 0x73, 0xE6);
 
@@ -76,6 +76,9 @@ pub struct LineEditor {
     /// The original PDF rectangle, in user space. It is converted again each frame so the editor
     /// stays attached while the page is zoomed, scrolled, or rotated.
     source_rect: [f32; 4],
+    /// BMU PDF: the page's user space turned as the page is shown, which the editor measures
+    /// the paragraph's rows in ([`ShownFrame`]).
+    frame: ShownFrame,
     multiline: bool,
     source: Option<(pdfcraft_engine::TextBlock, Vec<pdfcraft_engine::TextLine>)>,
     pub(crate) fonts: BTreeMap<String, String>,
@@ -627,8 +630,10 @@ fn open_editor(cx: PageToolContext<'_>, lines: &[pdfcraft_engine::TextBlock], bo
     view.image_selection = None;
     let source_lines = doc.text_lines(page);
     let text = l.editor_text.clone();
-    // Screen pixels per point, from the box's width.
-    let scale = (b.width() - 4.0) / ((l.rect[2] - l.rect[0]).max(1.0) as f32);
+    // Screen pixels per point, from the box's width along its rows as shown.
+    let frame = ShownFrame::of(&doc.info, page);
+    let shown = frame.rect(l.rect);
+    let scale = (b.width() - 4.0) / ((shown[2] - shown[0]).max(1.0) as f32);
     // How far the editor box may grow: a single-line paragraph's rewrite grows to the
     // page's right edge, a multi-line paragraph rewraps to its own width.
     let right = xf.rect.right().min(view.viewport_rect().right()) - 6.0;
@@ -642,6 +647,7 @@ fn open_editor(cx: PageToolContext<'_>, lines: &[pdfcraft_engine::TextBlock], bo
         original: text,
         rect: *b,
         source_rect: l.rect.map(|v| v as f32),
+        frame,
         multiline: l.rows.len() > 1,
         source: Some((l.clone(), source_lines)),
         fonts: install_source_fonts(ui.ctx(), doc, page),
@@ -847,7 +853,8 @@ pub(crate) fn overlay(ctx: &egui::Context, view: &mut DocView, info: &DocInfo) -
     }
     ed.rect = xf.user_rect(info, ed.page, ed.source_rect);
     ed.max_width = ed.rect.width();
-    let scale = (ed.rect.width() / (ed.source_rect[2] - ed.source_rect[0]).abs().max(0.01)).max(0.01);
+    let shown = ed.frame.rect_f32(ed.source_rect);
+    let scale = (ed.rect.width() / (shown[2] - shown[0]).abs().max(0.01)).max(0.01);
     ed.size = (ed.look.size as f32 * scale).clamp(1.0, 300.0);
     // egui draws the caret at least one row of this font tall. Each row already has its source
     // row's height, so the font stays below every row (half the region's smallest size): on a
@@ -1292,6 +1299,7 @@ C", &picked
             original: block.text.clone(),
             rect: Rect::NOTHING,
             source_rect: block.rect.map(|v| v as f32),
+            frame: ShownFrame::default(),
             multiline: block.rows.len() > 1,
             source: None,
             fonts: BTreeMap::new(),
@@ -1309,6 +1317,155 @@ C", &picked
             typing_from: None,
         };
         (app, ed)
+    }
+
+    /// A one-page PDF shown turned a quarter (`/Rotate 90`) whose content is drawn turned back,
+    /// so `text` reads upright on screen while its row runs up user space: how ภ.ง.ด. forms
+    /// (JasperReports, iText) lay out a landscape page.
+    fn turned_page_pdf(text: &str) -> Vec<u8> {
+        one_page_pdf("/Rotate 90", &format!("q 0 1 -1 0 595 0 cm BT /F1 12 Tf 1 0 0 1 300 400 Tm ({text}) Tj ET Q"))
+    }
+
+    /// A one-page PDF with `page` added to its page dictionary, drawing `content` in Helvetica (`/F1`).
+    fn one_page_pdf(page: &str, content: &str) -> Vec<u8> {
+        let objects = [
+            "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+            format!("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] {page} /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>"),
+            format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>".to_string(),
+        ];
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let mut offsets = Vec::new();
+        for (i, body) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            pdf.extend_from_slice(format!("{} 0 obj\n{body}\nendobj\n", i + 1).as_bytes());
+        }
+        let xref = pdf.len();
+        pdf.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes());
+        for offset in offsets {
+            pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        pdf.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1).as_bytes());
+        pdf
+    }
+
+    /// BMU PDF: a number in a ภ.ง.ด.53 attachment opened squeezed into a blob: its row was
+    /// measured along the page's unturned x axis, where its width is the text's height, and the
+    /// letter spacing closed that gap. Measured along the row as shown, it keeps its own spacing.
+    #[test]
+    fn a_row_on_a_page_shown_turned_is_edited_at_its_own_letter_spacing() {
+        let mut app = crate::PdfCraftApp::new();
+        app.open_bytes("turned.pdf", None, turned_page_pdf("1,234,567.89")).unwrap();
+        let doc = app.session.get(app.views[0].id).unwrap();
+        assert_eq!(doc.info.pages[0].rotation, 90);
+        let ed = editor_on_first_paragraph(doc);
+        assert_eq!(ed.text, "1,234,567.89");
+        let shown = ed.frame.rect(ed.source_rect.map(f64::from));
+        assert!(shown[2] - shown[0] > shown[3] - shown[1], "as shown, the row is wider than it is tall: {shown:?}");
+        let scale = 2.0;
+        let ctx = egui::Context::default();
+        let mut checked = false;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let job = editor_job(ui, &ed, &ed.text, scale, f32::INFINITY);
+            assert!(!job.sections.is_empty());
+            for section in &job.sections {
+                // Helvetica against the interface face: a fraction of a pixel per character
+                // either way, never several pixels pulled back onto the previous glyph.
+                assert!(section.format.extra_letter_spacing.abs() < 1.5, "letter spacing {}", section.format.extra_letter_spacing);
+            }
+            let galley = editor_galley(ui, &ed, &ed.text, scale, f32::INFINITY);
+            let wide = (shown[2] - shown[0]) as f32 * scale;
+            assert!((galley.rect.width() - wide).abs() < wide * 0.2, "the draft is {} px wide, the row {wide} px", galley.rect.width());
+            checked = true;
+        });
+        output.textures_delta.clear();
+        assert!(checked);
+    }
+
+    /// BMU PDF: the editor's stand-in for a face it can't load (an iText TH Sarabun subset) was
+    /// pulled onto itself to fit the narrower source, so its digits overlapped. It is drawn
+    /// smaller instead, and what spacing is left keeps the glyphs apart.
+    #[test]
+    fn a_stand_in_wider_than_its_source_is_drawn_smaller_not_overlapped() {
+        let mut app = crate::PdfCraftApp::new();
+        // Horizontal scaling at 70 %: about how much narrower TH Sarabun's digits are than the
+        // interface face's.
+        app.open_bytes("narrow.pdf", None, one_page_pdf("", "BT /F1 12 Tf 70 Tz 1 0 0 1 72 700 Tm (1,234,567.89) Tj ET")).unwrap();
+        let doc = app.session.get(app.views[0].id).unwrap();
+        let ed = editor_on_first_paragraph(doc);
+        assert_eq!(ed.text, "1,234,567.89");
+        assert!(ed.fonts.is_empty(), "no source face is loaded: the editor draws a stand-in");
+        let scale = 2.0;
+        let ctx = egui::Context::default();
+        let mut checked = false;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let job = editor_job(ui, &ed, &ed.text, scale, f32::INFINITY);
+            assert!(!job.sections.is_empty());
+            for section in &job.sections {
+                let full = (ed.look.size as f32 * scale).clamp(1.0, 300.0);
+                assert!(section.format.font_id.size < full, "drawn at {} of {full}", section.format.font_id.size);
+                assert!(section.format.font_id.size >= full * 0.6 - 0.01, "no smaller than 60 %: {}", section.format.font_id.size);
+                assert!(section.format.extra_letter_spacing.abs() < 0.5, "letter spacing {}", section.format.extra_letter_spacing);
+            }
+            checked = true;
+        });
+        output.textures_delta.clear();
+        assert!(checked);
+    }
+
+    /// An editor on the first paragraph of `doc`'s first page, as `open_editor` opens it, without
+    /// any of the document's faces installed.
+    fn editor_on_first_paragraph(doc: &pdfcraft_engine::Document) -> LineEditor {
+        let (block, lines) = (doc.text_blocks(0).remove(0), doc.text_lines(0));
+        LineEditor {
+            selection: None,
+            font_resource: None,
+            page: 0,
+            block: 0,
+            text: block.editor_text.clone(),
+            original: block.editor_text.clone(),
+            rect: Rect::NOTHING,
+            source_rect: block.rect.map(|v| v as f32),
+            frame: ShownFrame::of(&doc.info, 0),
+            multiline: false,
+            source: Some((block.clone(), lines)),
+            fonts: BTreeMap::new(),
+            overflow: false,
+            max_width: 400.0,
+            size: block.size as f32,
+            focus: true,
+            had_focus: false,
+            look: look_of(&block),
+            look0: look_of(&block),
+            family_chosen: false,
+            size_chosen: false,
+            extras: Extras::default(),
+            extras0: Extras::default(),
+            typing_from: None,
+        }
+    }
+
+    #[test]
+    fn the_shown_frame_turns_user_space_as_the_page_is_shown() {
+        let crop = [10.0, 20.0, 605.0, 862.0];
+        let frame = |rotation| ShownFrame { rotation, crop };
+        // Upright: user space as it is.
+        assert_eq!(frame(0).point([100.0, 200.0]), [100.0, 200.0]);
+        // Turned a quarter clockwise: up user space runs right, and its right edge is the top.
+        assert_eq!(frame(90).point([100.0, 200.0]), [180.0, 505.0]);
+        assert_eq!(frame(90).rect([100.0, 200.0, 112.0, 260.0]), [180.0, 493.0, 240.0, 505.0]);
+        assert_eq!(frame(180).point([100.0, 200.0]), [505.0, 662.0]);
+        assert_eq!(frame(270).point([100.0, 200.0]), [662.0, 90.0]);
+        // Every turn keeps a box's size, sides swapped on a quarter turn, and never inverts it.
+        for rotation in [0, 90, 180, 270] {
+            let r = frame(rotation).rect([100.0, 200.0, 112.0, 260.0]);
+            assert!(r[0] <= r[2] && r[1] <= r[3], "{rotation}: {r:?}");
+            let sides = if rotation % 180 == 90 { (60.0, 12.0) } else { (12.0, 60.0) };
+            assert_eq!((r[2] - r[0], r[3] - r[1]), sides, "{rotation}");
+        }
+        // A NaN box from a broken page stays a NaN box: nothing here can panic.
+        assert!(frame(90).rect([f64::NAN; 4]).iter().all(|v| v.is_nan()));
     }
 
     #[test]
@@ -1519,6 +1676,7 @@ C", &picked
             original: "Paragraph text".to_string(),
             rect: egui::Rect::ZERO,
             source_rect: [0.0; 4],
+            frame: ShownFrame::default(),
             max_width: 100.0,
             overflow: false,
             selection: None,

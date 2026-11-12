@@ -142,6 +142,8 @@ pub enum Dialog {
     Revert,
     /// Save over a file that changed on disk since the document came from it (#2166).
     OverwriteChanged,
+    /// BMU PDF: delete text from the other pages that draw it in the same place too.
+    DeleteEverywhere,
     /// Link Properties.
     LinkProps,
     /// Organize ▸ Extract (options), Rotate Pages.

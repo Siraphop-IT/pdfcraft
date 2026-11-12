@@ -141,13 +141,56 @@ fn matching_thai_face(face: &str) -> bool {
     pdfcraft_fonts::embedding::matching_faces(face).iter().any(|f| std::ptr::eq(*f, thai))
 }
 
+/// BMU PDF: user space turned as the page is shown (its `/Rotate`), in points with y up. The
+/// inline editor lays a paragraph out in this frame: a landscape form drawn turned on a page shown
+/// turned (a ภ.ง.ด. attachment) has rows that run up user space, so measured there a row's width
+/// is its height and its digits are squeezed into it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct ShownFrame {
+    pub(super) rotation: u16,
+    pub(super) crop: [f64; 4],
+}
+
+impl ShownFrame {
+    pub(crate) fn of(info: &pdfcraft_render::DocInfo, page: usize) -> Self {
+        info.pages.get(page).map_or_else(Self::default, |p| Self { rotation: p.rotation % 360, crop: p.crop.map(f64::from) })
+    }
+
+    /// A point in user space, in the frame. An upright page's user space is the frame itself.
+    pub(crate) fn point(&self, [x, y]: [f64; 2]) -> [f64; 2] {
+        let [cx0, cy0, cx1, cy1] = self.crop;
+        match self.rotation {
+            90 => [y - cy0, cx1 - x],
+            180 => [cx1 - x, cy1 - y],
+            270 => [cy1 - y, x - cx0],
+            _ => [x, y],
+        }
+    }
+
+    /// A user-space rectangle `[x0, y0, x1, y1]`, in the frame.
+    pub(crate) fn rect(&self, r: [f64; 4]) -> [f64; 4] {
+        let ([ax, ay], [bx, by]) = (self.point([r[0], r[1]]), self.point([r[2], r[3]]));
+        [ax.min(bx), ay.min(by), ax.max(bx), ay.max(by)]
+    }
+
+    pub(crate) fn rect_f32(&self, r: [f32; 4]) -> [f32; 4] {
+        self.rect(r.map(f64::from)).map(|v| v as f32)
+    }
+}
+
+/// BMU PDF: the smallest a stand-in face is drawn, as a share of the paragraph's size, to fit
+/// the source width (see [`editor_job`]).
+const MIN_STAND_IN_FIT: f32 = 0.6;
+
 pub(super) fn editor_job(ui: &egui::Ui, ed: &LineEditor, text: &str, scale: f32, width: f32) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
     // An unchanged PDF row already has an authoritative line break. Do not rewrap it
     // because font rounding or a fallback face measures a fraction of a pixel wider.
     job.wrap.max_width = if text == ed.original && ed.look == ed.look0 && ed.extras == ed.extras0 { f32::INFINITY } else { width };
     if let Some((block, lines)) = &ed.source {
-        let lefts: Vec<_> = block.rows.iter().filter_map(|r| r.first().and_then(|i| lines.get(*i)).map(|l| l.rect[0])).collect();
+        let frame = ed.frame;
+        let block_rect = frame.rect(block.rect);
+        let lefts: Vec<_> = block.rows.iter().filter_map(|r| r.first().and_then(|i| lines.get(*i)).map(|l| frame.rect(l.rect)[0])).collect();
         let left_span = lefts.iter().copied().fold(f64::NEG_INFINITY, f64::max) - lefts.iter().copied().fold(f64::INFINITY, f64::min);
         let centered = block.rows.len() > 1
             && left_span > block.size * 0.5
@@ -155,9 +198,9 @@ pub(super) fn editor_job(ui: &egui::Ui, ed: &LineEditor, text: &str, scale: f32,
                 let rect = row
                     .iter()
                     .filter_map(|i| lines.get(*i))
-                    .map(|l| l.rect)
+                    .map(|l| frame.rect(l.rect))
                     .reduce(|a, b| [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])]);
-                rect.is_some_and(|r| ((r[0] + r[2] - block.rect[0] - block.rect[2]) / 2.0).abs() < block.size)
+                rect.is_some_and(|r| ((r[0] + r[2] - block_rect[0] - block_rect[2]) / 2.0).abs() < block.size)
             });
         if centered {
             job.halign = egui::Align::Center;
@@ -188,8 +231,18 @@ pub(super) fn editor_job(ui: &egui::Ui, ed: &LineEditor, text: &str, scale: f32,
             if embedded && let Some(name) = ed.fonts.get(&line.font) {
                 font.family = FontFamily::Name(name.clone().into());
             }
-            let native_width = ui.fonts_mut(|f| f.layout_no_wrap(line.text.clone(), font.clone(), Color32::BLACK).size().x);
-            let target_width = ((line.rect[2] - line.rect[0]) * look.size / line.size.max(0.01)) as f32 * scale;
+            let mut native_width = ui.fonts_mut(|f| f.layout_no_wrap(line.text.clone(), font.clone(), Color32::BLACK).size().x);
+            let shown = frame.rect(line.rect);
+            let target_width = ((shown[2] - shown[0]) * look.size / line.size.max(0.01)) as f32 * scale;
+            // BMU PDF: a stand-in for a face the editor can't load (an iText TH Sarabun subset
+            // without a cmap) can be far wider than it. Pulling its glyphs back onto each other
+            // to fit the source width made them unreadable; it is drawn smaller instead, down to
+            // `MIN_STAND_IN_FIT` of the size, and only what that leaves is taken up by spacing.
+            if original_face && !embedded && native_width > target_width && native_width > 0.0 && target_width > 0.0 {
+                let fit = (target_width / native_width).clamp(MIN_STAND_IN_FIT, 1.0);
+                font.size = (font.size * fit).max(1.0);
+                native_width *= fit;
+            }
             let spacing = if original_face { (target_width - native_width) / line.text.chars().count().saturating_sub(1).max(1) as f32 } else { 0.0 };
             job.append(
                 text.get(range).unwrap_or_default(),
@@ -236,6 +289,8 @@ pub(super) fn editor_galley(ui: &egui::Ui, ed: &LineEditor, text: &str, scale: f
     job.halign = egui::Align::LEFT;
     let mut galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
     let Some((block, lines)) = &ed.source else { return galley };
+    let frame = ed.frame;
+    let block_rect = frame.rect(block.rect);
     let sources: Vec<_> = block
         .rows
         .iter()
@@ -244,9 +299,9 @@ pub(super) fn editor_galley(ui: &egui::Ui, ed: &LineEditor, text: &str, scale: f
             let rect = row
                 .iter()
                 .filter_map(|i| lines.get(*i))
-                .map(|l| l.rect)
+                .map(|l| frame.rect(l.rect))
                 .reduce(|a, b| [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])])?;
-            Some((first.baseline()[1], rect))
+            Some((frame.point(first.baseline())[1], rect))
         })
         .collect();
     let Some((first_baseline, first_rect)) = sources.first().copied() else { return galley };
@@ -280,7 +335,7 @@ pub(super) fn editor_galley(ui: &egui::Ui, ed: &LineEditor, text: &str, scale: f
         let ratio = if changed_size { ed.look.size / ed.look0.size.max(0.01) } else { 1.0 };
         let ascent = (source_rect[3] - sources.get(index).map_or(last_baseline, |s| s.0)) as f32 * scale * ratio as f32;
         let descent = (sources.get(index).map_or(last_baseline, |s| s.0) - source_rect[1]) as f32 * scale * ratio as f32;
-        let base_y = (block.rect[3] - baseline) as f32 * scale;
+        let base_y = (block_rect[3] - baseline) as f32 * scale;
         let row = Arc::make_mut(&mut placed.row);
         placed.pos.y = base_y - ascent;
         let free = (width - row.size.x).max(0.0);
@@ -289,7 +344,7 @@ pub(super) fn editor_galley(ui: &egui::Ui, ed: &LineEditor, text: &str, scale: f
             Some(pdfcraft_engine::TextAlign::Right) => free,
             Some(pdfcraft_engine::TextAlign::Left | pdfcraft_engine::TextAlign::Justify) => 0.0,
             None if centered => (width - row.size.x) / 2.0,
-            None => (source_rect[0] - block.rect[0]) as f32 * scale,
+            None => (source_rect[0] - block_rect[0]) as f32 * scale,
         };
         for glyph in &mut row.glyphs {
             let dy = ascent - glyph.pos.y;

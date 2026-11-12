@@ -287,6 +287,10 @@ fn dialog_body(ui: &mut egui::Ui, app: &mut PdfCraftApp, dialog: Dialog, req: &m
                 return false;
             }
         }
+        Dialog::DeleteEverywhere => {
+            dialog_delete_everywhere(ui, app, req);
+            return false;
+        }
         Dialog::Print => {
             if !dialog_print(ui, app, req) {
                 return false;
@@ -1299,6 +1303,42 @@ fn dialog_overwrite_changed(ui: &mut egui::Ui, app: &mut PdfCraftApp, req: &mut 
     false
 }
 
+/// BMU PDF: `Dialog::DeleteEverywhere` content, with its own buttons. The choice becomes the
+/// view's pending edit; Cancel, Esc or closing the window deletes nothing.
+fn dialog_delete_everywhere(ui: &mut egui::Ui, app: &mut PdfCraftApp, req: &mut Pending) {
+    let Some(i) = app.active.filter(|i| app.views.get(*i).is_some_and(|v| v.delete_everywhere.is_some())) else {
+        req.close = true;
+        return;
+    };
+    let pages = app.views.get(i).and_then(|v| v.delete_everywhere.as_ref()).map_or(0, |d| d.pages);
+    ui.label(egui::RichText::new(tl!("Delete from every page?")).font(theme::semibold(18.0)));
+    ui.add_space(8.0);
+    ui.label(crate::i18n::fmt(
+        tl!("The same text is in the same place on {n} other pages, as a watermark stamped on each page is."),
+        &[("n", &pages.to_string())],
+    ));
+    ui.add_space(12.0);
+    let mut choice = None;
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        if widgets::pill_button(ui, tl!("Delete on every page"), true).clicked() {
+            choice = Some(true);
+        }
+        if widgets::pill_button(ui, tl!("This page only"), false).clicked() {
+            choice = Some(false);
+        }
+        if widgets::pill_button(ui, tl!("Cancel"), false).clicked() {
+            req.close = true;
+        }
+    });
+    if let Some(everywhere) = choice
+        && let Some(view) = app.views.get_mut(i)
+        && let Some(d) = view.delete_everywhere.take()
+    {
+        view.pending_edit = Some(if everywhere { d.everywhere } else { d.here });
+        req.close = true;
+    }
+}
+
 /// `Dialog::Print` content. Returns `false` when it has its own buttons and no footer is wanted.
 fn dialog_print(ui: &mut egui::Ui, app: &mut PdfCraftApp, req: &mut Pending) -> bool {
     let t = Tokens::get(ui.ctx());
@@ -1770,6 +1810,12 @@ fn finish_requests(app: &mut PdfCraftApp, dialog: Dialog, modal_closed: bool, re
     #[cfg(not(target_arch = "wasm32"))]
     if dialog == Dialog::OverwriteChanged && (modal_closed || req.close) {
         app.pending_overwrite = None;
+    }
+    // Cancelled or dismissed: nothing is deleted.
+    if dialog == Dialog::DeleteEverywhere && (modal_closed || req.close) {
+        for view in &mut app.views {
+            view.delete_everywhere = None;
+        }
     }
 }
 

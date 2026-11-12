@@ -10194,3 +10194,70 @@ fn image_transform_engine_refuses_singular_matrices_without_mutation() {
         assert_eq!(s.get(id).unwrap().bytes, before);
     }
 }
+
+/// Pages each drawing `body` and a stamp at `stamps[page]`: the shape a watermark another program
+/// stamped page by page has (no `/Artifact /Watermark` label).
+fn stamped_fixture(stamps: &[[i32; 2]]) -> Vec<u8> {
+    let n = stamps.len();
+    let mut objs: Vec<Vec<u8>> = vec![b"<< /Type /Catalog /Pages 2 0 R >>".to_vec()];
+    let kids: Vec<String> = (0..n).map(|i| format!("{} 0 R", 4 + 2 * i)).collect();
+    objs.push(format!("<< /Type /Pages /Kids [{}] /Count {n} /MediaBox [0 0 595 842] >>", kids.join(" ")).into_bytes());
+    objs.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>".to_vec());
+    for (i, [x, y]) in stamps.iter().enumerate() {
+        objs.push(format!("<< /Type /Page /Parent 2 0 R /Contents {} 0 R /Resources << /Font << /F1 3 0 R >> >> >>", 5 + 2 * i).into_bytes());
+        let body = format!("BT /F1 12 Tf 72 760 Td (Body {i}) Tj ET q 0.5 g BT /F1 40 Tf 0.8 0.6 -0.6 0.8 {x} {y} Tm (CHECK COPY) Tj ET Q");
+        objs.push(format!("<< /Length {} >>\nstream\n{body}\nendstream", body.len()).into_bytes());
+    }
+    let mut out = b"%PDF-1.7\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, o) in objs.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend_from_slice(format!("{} 0 obj\n", i + 1).as_bytes());
+        out.extend_from_slice(o);
+        out.extend_from_slice(b"\nendobj\n");
+    }
+    let xref = out.len();
+    out.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).as_bytes());
+    for o in offsets {
+        out.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
+    }
+    out.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objs.len() + 1).as_bytes());
+    out
+}
+
+/// BMU PDF: a watermark stamped on each page by another program came back on every page but the
+/// one it was deleted from. The same paragraph in the same place on the other pages is found, so
+/// all of it can go in one step, and the same words somewhere else are not taken with it.
+#[test]
+fn a_paragraph_stamped_on_every_page_is_found_on_the_others() {
+    let mut s = Session::new().with_clock(|| 1_700_000_000);
+    let id = s.open("stamped.pdf", None, Arc::new(stamped_fixture(&[[200, 300], [200, 300], [260, 300]])), None).expect("opens");
+    let stamp = |s: &Session, page: usize| s.get(id).unwrap().text_blocks(page).iter().position(|b| b.text == "CHECK COPY");
+    let first = stamp(&s, 0).expect("the stamp is a paragraph");
+    let doc = s.get(id).unwrap();
+    // Page 2 has it in the same place; page 3's is 60 pt to the right, another paragraph.
+    assert_eq!(doc.same_paragraph_elsewhere(0, first), [(1, stamp(&s, 1).unwrap())]);
+    assert_eq!(doc.same_paragraph_elsewhere(1, stamp(&s, 1).unwrap()), [(0, first)]);
+    assert!(doc.same_paragraph_elsewhere(2, stamp(&s, 2).unwrap()).is_empty());
+    // A paragraph only on its own page, a page or paragraph that isn't there: nothing.
+    let body = doc.text_blocks(0).iter().position(|b| b.text == "Body 0").unwrap();
+    assert!(doc.same_paragraph_elsewhere(0, body).is_empty());
+    assert!(doc.same_paragraph_elsewhere(0, 99).is_empty());
+    assert!(doc.same_paragraph_elsewhere(9, 0).is_empty());
+
+    // Deleting it from page 1 and from where it was found removes both, and survives a save.
+    let mut edits = vec![Edit::EditTextBlock { page: 0, block: first, text: String::new(), style: pdfcraft_edit::BlockStyle::default() }];
+    edits.extend(doc.same_paragraph_elsewhere(0, first).into_iter().map(|(page, block)| Edit::EditTextBlock {
+        page,
+        block,
+        text: String::new(),
+        style: pdfcraft_edit::BlockStyle::default(),
+    }));
+    s.apply(id, Edit::Batch { label: "Delete content".into(), edits }).unwrap();
+    let saved = s.save_bytes(id).unwrap();
+    let again = s.open("again.pdf", None, saved, None).unwrap();
+    let texts = |page| s.get(again).unwrap().text_blocks(page).into_iter().map(|b| b.text).collect::<Vec<_>>();
+    assert_eq!(texts(0), ["Body 0"]);
+    assert_eq!(texts(1), ["Body 1"]);
+    assert_eq!(texts(2), ["Body 2", "CHECK COPY"], "the one somewhere else stays");
+}

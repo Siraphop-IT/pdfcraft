@@ -591,6 +591,9 @@ pub struct DocView {
     select_anchor: Option<usize>,
     /// An edit requested by the view (organize toolbar, keys), applied by the app this frame.
     pub pending_edit: Option<Edit>,
+    /// BMU PDF: a Delete whose text other pages draw again in the same place, waiting for the
+    /// app to ask whether those copies go too.
+    pub(crate) delete_everywhere: Option<crate::object_ui::DeleteEverywhere>,
     /// Edit text: the lines per page (with the document generation they were read at), and the
     /// line being edited.
     pub(crate) edit_lines: HashMap<usize, (u64, Vec<pdfcraft_engine::TextBlock>)>,
@@ -962,6 +965,7 @@ impl DocView {
             select_anchor: None,
             organize_range: Default::default(),
             pending_edit: None,
+            delete_everywhere: None,
             edit_lines: HashMap::new(),
             line_editor: None,
             applied_editor: None,
