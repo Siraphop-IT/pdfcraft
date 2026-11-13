@@ -173,6 +173,10 @@ pub fn tab_strip(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                                         action = Some(crate::tab_context::Action::Reveal(id));
                                         ui.close();
                                     }
+                                    if ui.add_enabled(reveal && app.views.len() > 1, egui::Button::new(tl!("Open in New Window"))).clicked() {
+                                        action = Some(crate::tab_context::Action::NewWindow(id, None));
+                                        ui.close();
+                                    }
                                 });
                                 if response.clicked() {
                                     app.active = Some(i);
@@ -184,15 +188,34 @@ pub fn tab_strip(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                                 }
                             }
                             // Dragging a tab moves it (#1537): a line marks the gap it will land
-                            // in, and releasing the button drops it there.
+                            // in, and releasing the button drops it there. Released away from the
+                            // strip (over the page or outside the window), the document opens in
+                            // a window of its own, there.
+                            let pointer = ui.ctx().input(|i| i.pointer.latest_pos().or_else(|| i.pointer.interact_pos()));
                             if let Some((from, released)) = dragged
-                                && let Some(x) = ui.ctx().pointer_latest_pos().map(|p| p.x)
+                                && let Some(pointer) = pointer
                             {
+                                let x = pointer.x;
                                 let to = drop_index(&slots, from, x);
+                                let away = cfg!(not(target_arch = "wasm32")) && app.views.len() > 1 && off_strip(full, pointer);
                                 if released {
                                     if close.is_none() && action.is_none() {
-                                        app.move_tab(from, to);
+                                        if away && let Some(view) = app.views.get(from) {
+                                            let window = ui.ctx().input(|i| i.viewport().inner_rect);
+                                            action = Some(crate::tab_context::Action::NewWindow(view.id, window.map(|w| w.min + pointer.to_vec2())));
+                                        } else {
+                                            app.move_tab(from, to);
+                                        }
                                     }
+                                } else if away {
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                                    egui::Tooltip::always_open(
+                                        ui.ctx().clone(),
+                                        ui.layer_id(),
+                                        ui.scope_id().with("tab_off_strip"),
+                                        egui::PopupAnchor::Pointer,
+                                    )
+                                    .show(|ui| ui.label(tl!("Release to open in a new window")));
                                 } else {
                                     drag_x = Some(x);
                                     ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
@@ -321,6 +344,15 @@ fn appearance_menu(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
         app.dialog = Some(Dialog::Preferences);
         ui.close();
     }
+}
+
+/// How far from the tab strip a dragged tab is released to open in a window of its own.
+const TEAR_OFF: f32 = 40.0;
+
+/// Whether a tab dragged from `strip` and released at `pointer` leaves it for a window of its own:
+/// further than [`TEAR_OFF`] from the strip, below it over the page or anywhere outside the window.
+fn off_strip(strip: Rect, pointer: egui::Pos2) -> bool {
+    !strip.expand(TEAR_OFF).contains(pointer)
 }
 
 /// A tab's chrome around its name: the icon on the left, the close button on the right.
@@ -892,6 +924,19 @@ mod tab_widths {
         // The last tab dropped at the start: before the first tab.
         assert_eq!(drop_marker(&slots, 2, 0, 4.0), Some(-2.0));
         assert_eq!(drop_marker(&[], 0, 1, 4.0), None);
+    }
+
+    /// A tab released along the strip moves along it; well away from it, over the page or
+    /// outside the window, it leaves for a window of its own.
+    #[test]
+    fn a_tab_released_well_away_from_the_strip_leaves_it() {
+        use super::{TEAR_OFF, off_strip};
+        let strip = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1000.0, 38.0));
+        assert!(!off_strip(strip, egui::pos2(300.0, 20.0)));
+        assert!(!off_strip(strip, egui::pos2(300.0, 38.0 + TEAR_OFF - 1.0)), "a slip below the strip still reorders");
+        assert!(off_strip(strip, egui::pos2(300.0, 38.0 + TEAR_OFF + 1.0)), "over the page");
+        assert!(off_strip(strip, egui::pos2(300.0, -TEAR_OFF - 1.0)), "above the window");
+        assert!(off_strip(strip, egui::pos2(1000.0 + TEAR_OFF + 1.0, 20.0)), "beside the window");
     }
 
     #[test]

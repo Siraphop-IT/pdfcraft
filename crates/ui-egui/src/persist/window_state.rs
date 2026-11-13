@@ -18,13 +18,22 @@ pub struct WindowState {
     shown: Option<String>,
     /// The size at start has been checked ([`Self::repair`]).
     checked: bool,
+    /// Where the window is to open, in screen points (`--window-at`: a tab dragged out of another
+    /// window), moved there once it is shown.
+    place: Option<egui::Pos2>,
 }
 
 impl WindowState {
     /// The settings the window started with: what to put back if it is minimized before eframe
     /// stores a shown one.
     pub fn started_with(storage: Option<&dyn eframe::Storage>) -> Self {
-        Self { shown: storage.and_then(|s| s.get_string(WINDOW_KEY)), checked: false }
+        Self { shown: storage.and_then(|s| s.get_string(WINDOW_KEY)), checked: false, place: None }
+    }
+
+    /// Open the window with its top-left corner at `at`, in screen points, instead of where it
+    /// was last closed.
+    pub fn place_at(&mut self, at: egui::Pos2) {
+        self.place = Some(at);
     }
 
     /// After eframe has stored the window: remember it while the window is shown, and while it
@@ -52,6 +61,9 @@ impl WindowState {
             return;
         }
         self.checked = true;
+        if let Some(at) = self.place.take() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(at));
+        }
         if rect.width() <= EGUI_FLOOR + 0.5 && rect.height() <= EGUI_FLOOR + 0.5 {
             // The stored settings are the broken ones: never put them back.
             self.shown = None;
@@ -120,7 +132,7 @@ mod tests {
         info.inner_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size));
         info.minimized = minimized;
         info.monitor_size = Some(egui::vec2(2674.0, 1504.0));
-        let mut state = WindowState { shown: Some(MINIMIZED.into()), checked: false };
+        let mut state = WindowState { shown: Some(MINIMIZED.into()), checked: false, place: None };
         let out = ctx.run_logic(&input, |ctx| state.repair(ctx));
         let commands = out.viewport_commands.get(&egui::ViewportId::ROOT).cloned().unwrap_or_default();
         // Repaired: the settings it started with are not put back by a minimized close.
@@ -133,5 +145,21 @@ mod tests {
         assert_eq!(repaired(egui::vec2(64.0, 64.0), Some(false)), [egui::ViewportCommand::InnerSize(USABLE)]);
         assert!(repaired(egui::vec2(820.0, 520.0), Some(false)).is_empty(), "a small window someone chose stays");
         assert!(repaired(egui::vec2(64.0, 64.0), Some(true)).is_empty(), "not while minimized");
+    }
+
+    /// A tab dragged out of another window opens its window where it was dropped, once.
+    #[test]
+    fn a_window_asked_to_open_at_a_place_moves_there_once() {
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.viewports.entry(egui::ViewportId::ROOT).or_default().inner_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, USABLE));
+        let mut state = WindowState::started_with(None);
+        state.place_at(egui::pos2(300.0, 120.0));
+        let mut commands = || {
+            let out = ctx.run_logic(&input, |ctx| state.repair(ctx));
+            out.viewport_commands.get(&egui::ViewportId::ROOT).cloned().unwrap_or_default()
+        };
+        assert_eq!(commands(), [egui::ViewportCommand::OuterPosition(egui::pos2(300.0, 120.0))]);
+        assert!(commands().is_empty());
     }
 }

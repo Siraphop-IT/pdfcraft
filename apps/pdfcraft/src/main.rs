@@ -18,6 +18,8 @@
 //!
 //! `--new-window` opens a window of its own. Without it, on Windows, a launch that only names files
 //! hands them to the PdfCraft already running, where they open as tabs (`single_instance`).
+//! `--window-at X,Y` puts that window's top-left corner there, in screen points: a tab dragged out
+//! of another window opens its file this way, where it was dropped.
 //!
 //! `--control <file>` enables the UI control channel (off by default): the app listens on a random
 //! loopback port and writes `{"port", "token", "pid"}` to `<file>` (owner-only permissions). The

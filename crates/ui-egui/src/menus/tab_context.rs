@@ -7,6 +7,9 @@ pub(crate) enum Action {
     Reveal(DocId),
     /// Show this tab beside the active one (or, from the active tab itself, beside the next).
     SideBySide(DocId),
+    /// Open this tab's file in a window of its own and close the tab here: a tab dragged off
+    /// the strip, with where it was dropped in screen points.
+    NewWindow(DocId, Option<egui::Pos2>),
 }
 
 impl crate::PdfCraftApp {
@@ -42,6 +45,12 @@ impl crate::PdfCraftApp {
                     self.toggle_side_by_side();
                 }
             },
+            Action::NewWindow(id, at) => {
+                #[cfg(not(target_arch = "wasm32"))]
+                self.open_in_new_window(id, at, spawn_window);
+                #[cfg(target_arch = "wasm32")]
+                let _ = (id, at);
+            }
             Action::Reveal(id) => {
                 #[cfg(not(target_arch = "wasm32"))]
                 if let Some(path) = self.session.get(id).and_then(|d| d.path.clone())
@@ -54,6 +63,84 @@ impl crate::PdfCraftApp {
             }
         }
     }
+}
+
+/// Where a window opened from a dropped tab puts its top-left corner, from the drop point: up and
+/// to the left, so the pointer lands on its tab strip.
+#[cfg(not(target_arch = "wasm32"))]
+const DROP_TO_CORNER: egui::Vec2 = egui::vec2(120.0, 18.0);
+/// The furthest `--window-at` reaches, in points: beyond any desktop, and what an `f32` keeps exact.
+#[cfg(not(target_arch = "wasm32"))]
+const WINDOW_AT_LIMIT: f32 = 1_000_000.0;
+
+#[cfg(not(target_arch = "wasm32"))]
+impl crate::PdfCraftApp {
+    /// Opens tab `id`'s file in a new window (`spawn` starts it with these arguments) and closes
+    /// the tab here once it has started. Only a saved file moves: the other window reads it from
+    /// disk, so unsaved changes would be lost on the way. The last tab stays, so this window is
+    /// never left empty for it.
+    fn open_in_new_window(&mut self, id: DocId, at: Option<egui::Pos2>, spawn: impl FnOnce(&[std::ffi::OsString]) -> std::io::Result<()>) {
+        let Some(index) = self.views.iter().position(|v| v.id == id) else { return };
+        if self.views.len() < 2 {
+            return;
+        }
+        let path = self.session.get(id).and_then(|d| d.path.clone());
+        let Some(path) = path.filter(|_| !self.has_unsaved_work(index)) else {
+            self.notify_tr("Save the document before opening it in a new window.");
+            return;
+        };
+        let args = match new_window_args(std::path::Path::new(&path), at) {
+            Ok(args) => args,
+            Err(e) => return self.notify_error(e),
+        };
+        if let Err(e) = spawn(&args) {
+            return self.notify_error(e);
+        }
+        self.close_tab(index);
+        // Moved, not closed: Reopen Closed Tab would open a second copy.
+        if self.closed_tabs.last() == Some(&path) {
+            self.closed_tabs.pop();
+        }
+    }
+}
+
+/// The arguments that open `path` in a window of its own, its corner placed for a tab dropped at
+/// `at`. The path is absolute, so a name starting with `-` can't become an option.
+#[cfg(not(target_arch = "wasm32"))]
+fn new_window_args(path: &std::path::Path, at: Option<egui::Pos2>) -> Result<Vec<std::ffi::OsString>, String> {
+    let path = std::path::absolute(path).map_err(|e| e.to_string())?;
+    if !path.try_exists().map_err(|e| e.to_string())? {
+        return Err("The file no longer exists".into());
+    }
+    let mut args = vec![std::ffi::OsString::from("--new-window")];
+    if let Some(corner) = at.map(|p| p - DROP_TO_CORNER).filter(|p| p.x.abs() <= WINDOW_AT_LIMIT && p.y.abs() <= WINDOW_AT_LIMIT) {
+        args.push("--window-at".into());
+        args.push(format!("{},{}", corner.x.round(), corner.y.round()).into());
+    }
+    args.push(path.into_os_string());
+    Ok(args)
+}
+
+/// `--window-at x,y`: a window corner in screen points, within reach of a desktop.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn parse_window_at(value: &str) -> Option<egui::Pos2> {
+    let (x, y) = value.split_once(',')?;
+    let (x, y) = (x.trim().parse::<f32>().ok()?, y.trim().parse::<f32>().ok()?);
+    let within = |v: f32| v.is_finite() && v.abs() <= WINDOW_AT_LIMIT;
+    (within(x) && within(y)).then(|| egui::pos2(x, y))
+}
+
+/// Starts this program again with `args`, detached; a thread waits for it so it leaves no zombie.
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn_window(args: &[std::ffi::OsString]) -> std::io::Result<()> {
+    use std::process::Stdio;
+    let mut child =
+        std::process::Command::new(std::env::current_exe()?).args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()?;
+    // The window has started either way; without the thread it is only left unreaped until exit.
+    let _ = std::thread::Builder::new().name("pdfcraft-new-window".into()).spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -237,6 +324,79 @@ mod tests {
         assert_eq!(app.views.len(), 1, "an already-open file is selected, not duplicated");
         assert!(app.closed_tabs.is_empty());
         std::fs::remove_file(path).unwrap();
+    }
+
+    /// Where a test writes a saved file only it looks at.
+    fn saved_file(name: &str) -> std::path::PathBuf {
+        let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+        std::env::temp_dir().join(format!("pdfcraft-window-{}-{nonce}-{name}", std::process::id()))
+    }
+
+    /// A tab dropped off the strip opens its file in a window of its own, placed where it was
+    /// dropped, and leaves this window without a Reopen entry for it.
+    #[test]
+    fn a_tab_dropped_off_the_strip_moves_its_file_to_a_new_window() {
+        let path = saved_file("ภ.ง.ด.53 report.pdf");
+        std::fs::write(&path, PDF).unwrap();
+        let text = path.to_str().unwrap();
+        let mut app = crate::PdfCraftApp::new();
+        app.open_path(text);
+        app.open_bytes("second.pdf", None, PDF.to_vec()).unwrap();
+        let first = app.views[0].id;
+        let mut started = Vec::new();
+        app.open_in_new_window(first, Some(egui::pos2(500.0, 300.0)), |args| {
+            started = args.to_vec();
+            Ok(())
+        });
+        let corner = 500.0 - DROP_TO_CORNER.x;
+        let top = 300.0 - DROP_TO_CORNER.y;
+        let expected: Vec<std::ffi::OsString> =
+            vec!["--new-window".into(), "--window-at".into(), format!("{corner},{top}").into(), std::path::absolute(&path).unwrap().into()];
+        assert_eq!(started, expected);
+        assert_eq!(app.views.len(), 1);
+        assert_eq!(app.session.get(app.views[0].id).unwrap().name, "second.pdf");
+        assert!(app.closed_tabs.is_empty(), "moved, not closed");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    /// The new window reads the file from disk: unsaved changes, a file never saved, the last tab
+    /// and a window that didn't start all leave the tab where it is.
+    #[test]
+    fn a_tab_stays_unless_its_saved_file_reaches_a_new_window() {
+        let path = saved_file("kept.pdf");
+        std::fs::write(&path, PDF).unwrap();
+        let mut app = crate::PdfCraftApp::new();
+        app.open_path(path.to_str().unwrap());
+        let first = app.views[0].id;
+        let never = |_: &[std::ffi::OsString]| -> std::io::Result<()> { panic!("no window for the last tab") };
+        app.open_in_new_window(first, None, never);
+        assert_eq!(app.views.len(), 1);
+        app.open_bytes("unsaved.pdf", None, PDF.to_vec()).unwrap();
+        let unsaved = app.views[1].id;
+        let never = |_: &[std::ffi::OsString]| -> std::io::Result<()> { panic!("no window for a file never saved") };
+        app.open_in_new_window(unsaved, None, never);
+        assert_eq!(app.views.len(), 2);
+        app.session.apply(first, pdfcraft_engine::Edit::InsertBlankPage { at: 0, width: 300.0, height: 400.0 }).unwrap();
+        app.toast = None;
+        let never = |_: &[std::ffi::OsString]| -> std::io::Result<()> { panic!("no window for unsaved changes") };
+        app.open_in_new_window(first, None, never);
+        assert_eq!(app.views.len(), 2);
+        assert!(app.toast.is_some(), "it says to save first");
+        app.open_in_new_window(unsaved, None, |_| Err(std::io::Error::other("no window")));
+        assert_eq!(app.views.len(), 2);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn a_window_place_is_two_finite_numbers_within_reach() {
+        assert_eq!(parse_window_at("380,-18"), Some(egui::pos2(380.0, -18.0)));
+        assert_eq!(parse_window_at(" 12.5 , 40 "), Some(egui::pos2(12.5, 40.0)));
+        for bad in ["", "12", "12,", ",4", "a,b", "NaN,1", "inf,0", "1e9,0", "1,2,3"] {
+            assert_eq!(parse_window_at(bad), None, "{bad}");
+        }
+        let far = new_window_args(std::path::Path::new("."), Some(egui::pos2(f32::INFINITY, 0.0))).unwrap();
+        assert!(!far.contains(&"--window-at".into()), "an unusable place is left out");
+        assert!(new_window_args(std::path::Path::new("missing-pdfcraft-window.pdf"), None).is_err());
     }
 
     #[test]

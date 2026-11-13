@@ -89,6 +89,10 @@ impl PdfCraftApp {
                 self.select_tool(g.id);
             }
             ("left", _) => self.left_open = value != "closed",
+            #[cfg(not(target_arch = "wasm32"))]
+            ("window-at", _) => {
+                self.window_state.place_at(crate::tab_context::parse_window_at(value).ok_or("window-at must be x,y in screen points")?)
+            }
             ("home", _) => {
                 self.active = None;
                 // With no document open the expanded All tools view covers Home itself, so no
