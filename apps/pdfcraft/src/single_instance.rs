@@ -344,8 +344,21 @@ fn hand_off(stream: &UnixStream, request: &Request) -> std::io::Result<()> {
 #[cfg(any(windows, all(unix, not(target_os = "macos"))))]
 fn serve(listener: UnixListener) -> Claim {
     let server = Server::new();
+    match listen(&server, listener) {
+        Ok(()) => Claim::Primary(server),
+        Err(e) => {
+            log::warn!("single instance off: no listener thread ({e})");
+            Claim::Alone
+        }
+    }
+}
+
+/// Queue what arrives on `listener` in `server`'s inbox, on a background thread for as long as the
+/// process runs.
+#[cfg(any(windows, all(unix, not(target_os = "macos"))))]
+fn listen(server: &Server, listener: UnixListener) -> std::io::Result<()> {
     let inbox = Server { inbox: Arc::clone(&server.inbox) };
-    let started = std::thread::Builder::new().name("single-instance".into()).spawn(move || {
+    std::thread::Builder::new().name("single-instance".into()).spawn(move || {
         for stream in listener.incoming() {
             let result = stream.and_then(|s| receive(&s, &inbox));
             if let Err(e) = result {
@@ -354,14 +367,88 @@ fn serve(listener: UnixListener) -> Claim {
                 std::thread::sleep(Duration::from_millis(100));
             }
         }
-    });
-    match started {
-        Ok(_) => Claim::Primary(server),
-        Err(e) => {
-            log::warn!("single instance off: no listener thread ({e})");
-            Claim::Alone
+    })?;
+    Ok(())
+}
+
+/// The socket a window takes tabs dragged out of other windows on (Windows): beside the
+/// instance socket, so as private, and named after the window's process, which is what the
+/// window under a drop point tells.
+#[cfg(windows)]
+fn window_socket(pid: u32) -> Option<std::path::PathBuf> {
+    Some(socket_path()?.with_file_name(format!("window-{pid}.sock")))
+}
+
+/// Every window also takes tabs dragged out of other windows (Windows): its own socket, into
+/// `server`'s inbox (or a new one for a window of its own). Sockets left by windows that are gone
+/// are cleared first. Best effort: without the socket, tabs can't be dropped on this window.
+pub fn accept_tabs(server: Option<Server>) -> Option<Server> {
+    #[cfg(windows)]
+    {
+        match window_socket(std::process::id()) {
+            Some(path) => accept_tabs_at(&path, server),
+            None => server,
         }
     }
+    #[cfg(not(windows))]
+    server
+}
+
+/// [`accept_tabs`] with the window's socket at `path`. A window that can't listen keeps the
+/// server it had.
+#[cfg(windows)]
+fn accept_tabs_at(path: &std::path::Path, server: Option<Server>) -> Option<Server> {
+    clear_gone_windows(path);
+    let _ = std::fs::remove_file(path);
+    let listener = match UnixListener::bind(path) {
+        Ok(listener) => listener,
+        Err(e) => {
+            log::info!("tabs from other windows off: can't listen at {} ({e})", path.display());
+            return server;
+        }
+    };
+    let server = server.unwrap_or_else(Server::new);
+    if let Err(e) = listen(&server, listener) {
+        log::info!("tabs from other windows off: no listener thread ({e})");
+    }
+    Some(server)
+}
+
+/// Remove the window sockets in `own`'s folder that nothing answers on: their windows are gone.
+#[cfg(windows)]
+fn clear_gone_windows(own: &std::path::Path) {
+    let Some(dir) = own.parent() else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten().take(256) {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("window-") && name.ends_with(".sock") && UnixStream::connect(entry.path()).is_err() {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
+/// The other BMU PDF window at a point on the screen, in physical pixels: its process, when that
+/// is a window taking tabs ([`accept_tabs`]) and not this one.
+#[cfg(windows)]
+pub fn window_at(x: i32, y: i32) -> Option<u32> {
+    use winsafe::{HWND, POINT, co};
+    let window = HWND::WindowFromPoint(POINT { x, y })?.GetAncestor(co::GA::ROOT)?;
+    let (_, pid) = window.GetWindowThreadProcessId();
+    (pid != std::process::id() && window_socket(pid)?.try_exists().unwrap_or(false)).then_some(pid)
+}
+
+/// Open the saved file at `path` as a tab in the window of process `pid` ([`window_at`]).
+#[cfg(windows)]
+pub fn send_tab(pid: u32, path: &str) -> std::io::Result<()> {
+    let socket = window_socket(pid).ok_or_else(|| std::io::Error::other("no folder for BMU PDF's windows"))?;
+    send_tab_to(&socket, path)
+}
+
+/// [`send_tab`] to the window listening at `socket`.
+#[cfg(windows)]
+fn send_tab_to(socket: &std::path::Path, path: &str) -> std::io::Result<()> {
+    hand_off(&UnixStream::connect(socket)?, &Request::Open(vec![path.to_owned()]))
 }
 
 /// Read one launch's request, queue its files and confirm.
@@ -524,6 +611,29 @@ mod tests {
         let claims: Vec<Claim> = launches.into_iter().map(|t| t.join().unwrap()).collect();
         assert_eq!(claims.iter().filter(|c| matches!(c, Claim::Primary(_))).count(), 1, "one window");
         assert_eq!(claims.iter().filter(|c| matches!(c, Claim::HandedOff)).count(), 7, "the rest hand over");
+    }
+
+    /// A tab dropped on another window reaches that window's UI as a file to open, and a socket
+    /// whose window is gone is cleared when the next window starts.
+    #[cfg(windows)]
+    #[test]
+    fn a_tab_sent_to_another_window_opens_there() {
+        let path = socket("window-tab");
+        let dir = path.parent().unwrap();
+        std::fs::create_dir_all(dir).unwrap();
+        let gone = dir.join("window-4294967295.sock");
+        std::fs::write(&gone, b"").unwrap();
+        let other = dir.join("notes.txt");
+        std::fs::write(&other, b"").unwrap();
+        let own = dir.join("window-1.sock");
+        let server = accept_tabs_at(&own, None).expect("the window listens");
+        assert!(!gone.exists(), "a gone window's socket is cleared");
+        assert!(other.exists(), "nothing else is");
+        let mut poll = server.connect(&egui::Context::default(), false);
+        send_tab_to(&own, r"C:\Scans\ภ.ง.ด.53 report.pdf").unwrap();
+        assert_eq!(poll(), [OsEvent::Open(vec![r"C:\Scans\ภ.ง.ด.53 report.pdf".to_string()])]);
+        assert!(send_tab_to(&dir.join("window-2.sock"), "a.pdf").is_err(), "no window there");
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[cfg(any(windows, all(unix, not(target_os = "macos"))))]

@@ -167,6 +167,7 @@ impl PdfCraftApp {
             failed_inbox: Default::default(),
             unsaved_flag: Default::default(),
             os_events: None,
+            other_windows: None,
             host_save: None,
             host_dirty: None,
             close_request: None,

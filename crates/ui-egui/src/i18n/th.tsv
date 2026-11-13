@@ -2896,4 +2896,5 @@ theme	Appearance	ลักษณะที่ปรากฏ
 	This page only	เฉพาะหน้านี้
 	Open in New Window	เปิดในหน้าต่างใหม่
 	Release to open in a new window	ปล่อยเพื่อเปิดในหน้าต่างใหม่
-	Save the document before opening it in a new window.	บันทึกเอกสารก่อนเปิดในหน้าต่างใหม่
+	Save the document before moving it to another window.	บันทึกเอกสารก่อนย้ายไปหน้าต่างอื่น
+	Release to move to this window	ปล่อยเพื่อย้ายมาที่หน้าต่างนี้

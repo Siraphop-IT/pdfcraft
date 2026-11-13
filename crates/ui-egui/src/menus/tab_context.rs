@@ -10,6 +10,9 @@ pub(crate) enum Action {
     /// Open this tab's file in a window of its own and close the tab here: a tab dragged off
     /// the strip, with where it was dropped in screen points.
     NewWindow(DocId, Option<egui::Pos2>),
+    /// Open this tab's file as a tab in another of the app's windows (an id from
+    /// [`crate::OtherWindows::at`]) and close it here: a tab dropped on that window.
+    ToWindow(DocId, u32),
 }
 
 impl crate::PdfCraftApp {
@@ -51,6 +54,22 @@ impl crate::PdfCraftApp {
                 #[cfg(target_arch = "wasm32")]
                 let _ = (id, at);
             }
+            Action::ToWindow(id, window) => {
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(windows) = self.other_windows.take() {
+                    self.move_tab_out(id, true, |path| (windows.send)(window, &path.to_string_lossy()));
+                    self.other_windows = Some(windows);
+                    // Its last tab gone to another window, this one closes, as a browser's does.
+                    if self.views.is_empty()
+                        && !self.combine_tab.open
+                        && let Some(ctx) = &self.ctx
+                    {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                }
+                #[cfg(target_arch = "wasm32")]
+                let _ = (id, window);
+            }
             Action::Reveal(id) => {
                 #[cfg(not(target_arch = "wasm32"))]
                 if let Some(path) = self.session.get(id).and_then(|d| d.path.clone())
@@ -76,24 +95,32 @@ const WINDOW_AT_LIMIT: f32 = 1_000_000.0;
 #[cfg(not(target_arch = "wasm32"))]
 impl crate::PdfCraftApp {
     /// Opens tab `id`'s file in a new window (`spawn` starts it with these arguments) and closes
-    /// the tab here once it has started. Only a saved file moves: the other window reads it from
-    /// disk, so unsaved changes would be lost on the way. The last tab stays, so this window is
-    /// never left empty for it.
+    /// the tab here once it has started. The last tab stays, so this window is never left empty
+    /// for it.
     fn open_in_new_window(&mut self, id: DocId, at: Option<egui::Pos2>, spawn: impl FnOnce(&[std::ffi::OsString]) -> std::io::Result<()>) {
+        self.move_tab_out(id, false, |path| spawn(&new_window_args(path, at)?).map_err(|e| e.to_string()));
+    }
+
+    /// Hands tab `id`'s file to another window (`hand` gets its absolute path) and closes the tab
+    /// here once that window has it; `last` lets the window's last tab go too. Only a saved file
+    /// moves: the other window reads it from disk, so unsaved changes would be lost on the way.
+    fn move_tab_out(&mut self, id: DocId, last: bool, hand: impl FnOnce(&std::path::Path) -> Result<(), String>) {
         let Some(index) = self.views.iter().position(|v| v.id == id) else { return };
-        if self.views.len() < 2 {
+        if self.views.len() < 2 && !last {
             return;
         }
         let path = self.session.get(id).and_then(|d| d.path.clone());
         let Some(path) = path.filter(|_| !self.has_unsaved_work(index)) else {
-            self.notify_tr("Save the document before opening it in a new window.");
+            self.notify_tr("Save the document before moving it to another window.");
             return;
         };
-        let args = match new_window_args(std::path::Path::new(&path), at) {
-            Ok(args) => args,
-            Err(e) => return self.notify_error(e),
-        };
-        if let Err(e) = spawn(&args) {
+        let moved = std::path::absolute(&path).map_err(|e| e.to_string()).and_then(|absolute| {
+            if !absolute.try_exists().map_err(|e| e.to_string())? {
+                return Err("The file no longer exists".into());
+            }
+            hand(&absolute)
+        });
+        if let Err(e) = moved {
             return self.notify_error(e);
         }
         self.close_tab(index);
@@ -105,13 +132,10 @@ impl crate::PdfCraftApp {
 }
 
 /// The arguments that open `path` in a window of its own, its corner placed for a tab dropped at
-/// `at`. The path is absolute, so a name starting with `-` can't become an option.
+/// `at`. The path is made absolute, so a name starting with `-` can't become an option.
 #[cfg(not(target_arch = "wasm32"))]
 fn new_window_args(path: &std::path::Path, at: Option<egui::Pos2>) -> Result<Vec<std::ffi::OsString>, String> {
     let path = std::path::absolute(path).map_err(|e| e.to_string())?;
-    if !path.try_exists().map_err(|e| e.to_string())? {
-        return Err("The file no longer exists".into());
-    }
     let mut args = vec![std::ffi::OsString::from("--new-window")];
     if let Some(corner) = at.map(|p| p - DROP_TO_CORNER).filter(|p| p.x.abs() <= WINDOW_AT_LIMIT && p.y.abs() <= WINDOW_AT_LIMIT) {
         args.push("--window-at".into());
@@ -387,6 +411,45 @@ mod tests {
         std::fs::remove_file(path).unwrap();
     }
 
+    /// A tab dropped on another window moves there as a tab, even this window's last one; a
+    /// file never saved, or a window that didn't take it, keeps it here.
+    #[test]
+    fn a_tab_dropped_on_another_window_moves_there() {
+        use std::sync::{Arc, Mutex};
+        let path = saved_file("moved.pdf");
+        std::fs::write(&path, PDF).unwrap();
+        let sent: Arc<Mutex<Vec<(u32, String)>>> = Arc::default();
+        let refuse = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let mut app = crate::PdfCraftApp::new();
+        let (log, no) = (Arc::clone(&sent), Arc::clone(&refuse));
+        app.other_windows = Some(crate::OtherWindows {
+            at: Box::new(|_, _| None),
+            send: Box::new(move |window, path| {
+                if no.load(std::sync::atomic::Ordering::Relaxed) {
+                    return Err("that window is gone".into());
+                }
+                log.lock().unwrap().push((window, path.to_owned()));
+                Ok(())
+            }),
+        });
+        app.open_path(path.to_str().unwrap());
+        let id = app.views[0].id;
+        app.tab_action(Action::ToWindow(id, 7));
+        assert_eq!(app.views.len(), 1, "a window that didn't take it");
+        refuse.store(false, std::sync::atomic::Ordering::Relaxed);
+        app.open_bytes("unsaved.pdf", None, PDF.to_vec()).unwrap();
+        app.tab_action(Action::ToWindow(app.views[1].id, 7));
+        assert_eq!(app.views.len(), 2, "a file never saved stays");
+        assert!(sent.lock().unwrap().is_empty());
+        app.close_tab(1);
+        app.tab_action(Action::ToWindow(id, 7));
+        assert!(app.views.is_empty(), "the last tab goes too");
+        assert!(app.closed_tabs.is_empty(), "moved, not closed");
+        assert_eq!(*sent.lock().unwrap(), [(7, std::path::absolute(&path).unwrap().to_string_lossy().into_owned())]);
+        assert!(app.other_windows.is_some(), "the windows stay known");
+        std::fs::remove_file(path).unwrap();
+    }
+
     #[test]
     fn a_window_place_is_two_finite_numbers_within_reach() {
         assert_eq!(parse_window_at("380,-18"), Some(egui::pos2(380.0, -18.0)));
@@ -396,7 +459,6 @@ mod tests {
         }
         let far = new_window_args(std::path::Path::new("."), Some(egui::pos2(f32::INFINITY, 0.0))).unwrap();
         assert!(!far.contains(&"--window-at".into()), "an unusable place is left out");
-        assert!(new_window_args(std::path::Path::new("missing-pdfcraft-window.pdf"), None).is_err());
     }
 
     #[test]

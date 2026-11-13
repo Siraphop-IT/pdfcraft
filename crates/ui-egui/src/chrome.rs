@@ -189,33 +189,46 @@ pub fn tab_strip(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                             }
                             // Dragging a tab moves it (#1537): a line marks the gap it will land
                             // in, and releasing the button drops it there. Released away from the
-                            // strip (over the page or outside the window), the document opens in
-                            // a window of its own, there.
+                            // strip, the document moves: onto another of the app's windows, it
+                            // becomes a tab there (even this window's last one); anywhere else
+                            // (over the page or the desktop) it opens in a window of its own, there.
                             let pointer = ui.ctx().input(|i| i.pointer.latest_pos().or_else(|| i.pointer.interact_pos()));
                             if let Some((from, released)) = dragged
                                 && let Some(pointer) = pointer
                             {
                                 let x = pointer.x;
                                 let to = drop_index(&slots, from, x);
-                                let away = cfg!(not(target_arch = "wasm32")) && app.views.len() > 1 && off_strip(full, pointer);
+                                let off = cfg!(not(target_arch = "wasm32")) && off_strip(full, pointer);
+                                // The drop point on the screen, in points and in physical pixels.
+                                let (screen, ppp) =
+                                    ui.ctx().input(|i| (i.viewport().inner_rect.map(|w| w.min + pointer.to_vec2()), i.pixels_per_point));
+                                let other = screen.filter(|_| off).and_then(|p| {
+                                    let windows = app.other_windows.as_ref()?;
+                                    let (px, py) = (p.x * ppp, p.y * ppp);
+                                    let fits = |v: f32| v.is_finite() && v.abs() < i32::MAX as f32;
+                                    // Checked finite and in range just above, so the casts can't saturate.
+                                    (fits(px) && fits(py)).then(|| (windows.at)(px.round() as i32, py.round() as i32)).flatten()
+                                });
+                                let away = off && (other.is_some() || app.views.len() > 1);
                                 if released {
                                     if close.is_none() && action.is_none() {
-                                        if away && let Some(view) = app.views.get(from) {
-                                            let window = ui.ctx().input(|i| i.viewport().inner_rect);
-                                            action = Some(crate::tab_context::Action::NewWindow(view.id, window.map(|w| w.min + pointer.to_vec2())));
-                                        } else {
-                                            app.move_tab(from, to);
+                                        match (away, other, app.views.get(from)) {
+                                            (true, Some(window), Some(view)) => action = Some(crate::tab_context::Action::ToWindow(view.id, window)),
+                                            (true, None, Some(view)) => action = Some(crate::tab_context::Action::NewWindow(view.id, screen)),
+                                            _ => app.move_tab(from, to),
                                         }
                                     }
                                 } else if away {
                                     ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                                    let tip =
+                                        if other.is_some() { tl!("Release to move to this window") } else { tl!("Release to open in a new window") };
                                     egui::Tooltip::always_open(
                                         ui.ctx().clone(),
                                         ui.layer_id(),
                                         ui.scope_id().with("tab_off_strip"),
                                         egui::PopupAnchor::Pointer,
                                     )
-                                    .show(|ui| ui.label(tl!("Release to open in a new window")));
+                                    .show(|ui| ui.label(tip));
                                 } else {
                                     drag_x = Some(x);
                                     ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);

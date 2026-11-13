@@ -262,6 +262,8 @@ fn main() -> eframe::Result {
         single_instance::Claim::Primary(server) => Some(server),
         single_instance::Claim::Alone => None,
     };
+    // Each window also takes the tabs dragged out of the app's other windows (Windows).
+    let instance = single_instance::accept_tabs(instance);
     let choice = renderer_choice(std::env::var("PDFCRAFT_RENDERER").ok().as_deref());
     let launch = Launch { files, options, control_file, create_images, combine, integrated, window_controls, two_paged };
     // Finder, Open With and the Dock deliver files as Apple events, not arguments; catch the one
@@ -433,6 +435,14 @@ fn app_creator<'a>(
         }
         if let Some(server) = instance {
             app.os_events = Some(server.connect(&cc.egui_ctx, native_wayland(cc)));
+        }
+        // A tab dropped on another window moves there (each window is a process of its own).
+        #[cfg(windows)]
+        {
+            app.other_windows = Some(pdfcraft_ui_egui::OtherWindows {
+                at: Box::new(single_instance::window_at),
+                send: Box::new(|window, path| single_instance::send_tab(window, path).map_err(|e| e.to_string())),
+            });
         }
         if let Some(file) = &control_file {
             let client = app.attach_control(&cc.egui_ctx);

@@ -21,6 +21,20 @@ pub enum OsEvent {
 /// Returns the [`OsEvent`]s that arrived since it was last called (set by the desktop app).
 pub type OsEventsFn = Box<dyn FnMut() -> Vec<OsEvent>>;
 
+/// Finds the app's other window at a point on the screen, in physical pixels.
+pub type WindowAtFn = Box<dyn Fn(i32, i32) -> Option<u32>>;
+/// Opens a saved file (an absolute path) as a tab in another of the app's windows.
+pub type SendTabFn = Box<dyn Fn(u32, &str) -> Result<(), String>>;
+
+/// The app's other windows, which a tab dragged out of this one can be dropped on (set by the
+/// desktop app on Windows, where each window is a process of its own).
+pub struct OtherWindows {
+    /// The other window at a point on the screen, in physical pixels: an id for [`Self::send`].
+    pub at: WindowAtFn,
+    /// Open the saved file at this absolute path as a tab in that window.
+    pub send: SendTabFn,
+}
+
 /// Hands a saved PDF to the page embedding PdfCraft (web): `(name, bytes, save_as)`. `save_as`
 /// is `true` for Save As. Set by the web app when a host page (such as a Nextcloud app) asked
 /// for saves; without it the browser downloads the file.
