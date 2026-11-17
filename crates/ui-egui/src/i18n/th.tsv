@@ -2898,3 +2898,16 @@ theme	Appearance	ลักษณะที่ปรากฏ
 	Release to open in a new window	ปล่อยเพื่อเปิดในหน้าต่างใหม่
 	Save the document before moving it to another window.	บันทึกเอกสารก่อนย้ายไปหน้าต่างอื่น
 	Release to move to this window	ปล่อยเพื่อย้ายมาที่หน้าต่างนี้
+	Update now	อัปเดตเลย
+	BMU PDF is up to date	BMU PDF เป็นเวอร์ชันล่าสุดแล้ว
+	Version {version} is the newest.	เวอร์ชัน {version} เป็นเวอร์ชันล่าสุด
+	Couldn't update BMU PDF	อัปเดต BMU PDF ไม่สำเร็จ
+	A new version of BMU PDF is available	มี BMU PDF เวอร์ชันใหม่
+	Version {version} is ready to install (you have {current}).	เวอร์ชัน {version} พร้อมติดตั้งแล้ว (ตอนนี้ใช้ {current})
+	BMU PDF closes while it installs and opens again when it's done.	BMU PDF จะปิดระหว่างติดตั้ง และเปิดขึ้นมาใหม่เองเมื่อเสร็จ
+	Save your documents first: {count} have unsaved changes.	บันทึกเอกสารก่อน: มี {count} ไฟล์ที่ยังไม่ได้บันทึก
+	Close BMU PDF's other windows first ({count} open).	ปิดหน้าต่าง BMU PDF อื่นก่อน (เปิดอยู่ {count} หน้าต่าง)
+	Downloading BMU PDF {version}…	กำลังดาวน์โหลด BMU PDF {version}…
+	Installing the update…	กำลังติดตั้งอัปเดต…
+	The update check stopped unexpectedly.	การตรวจหาอัปเดตหยุดไปโดยไม่คาดคิด
+	The update stopped unexpectedly.	การอัปเดตหยุดไปโดยไม่คาดคิด

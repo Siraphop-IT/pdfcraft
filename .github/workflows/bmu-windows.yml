@@ -57,6 +57,16 @@ jobs:
       - name: Single-instance hand-off tests
         shell: bash
         run: cargo test -p pdfcraft --bin pdfcraft single_instance
+      # Each build is a release of its own: the workspace's major.minor and this workflow's run
+      # number (0.18.42), which the installer and the app's update check compare
+      # (apps/pdfcraft/src/update.rs, crates/engine/src/build_info.rs).
+      - name: Release number
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path Cargo.toml -Pattern '^\s*version\s*=\s*"(\d+)\.(\d+)\.' | Select-Object -First 1).Matches[0].Groups
+          $release = "$($v[1].Value).$($v[2].Value).$env:GITHUB_RUN_NUMBER"
+          Write-Output "BMU PDF $release"
+          "PDFCRAFT_VERSION=$release" >> $env:GITHUB_ENV
       - name: Build and package
         shell: pwsh
         env:

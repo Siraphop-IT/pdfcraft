@@ -168,6 +168,7 @@ impl PdfCraftApp {
             unsaved_flag: Default::default(),
             os_events: None,
             other_windows: None,
+            updater: None,
             host_save: None,
             host_dirty: None,
             close_request: None,
@@ -580,7 +581,7 @@ impl eframe::App for PdfCraftApp {
                 report(dirty);
             }
         }
-        self.poll_updates();
+        self.poll_updates(ctx);
         #[cfg(not(target_arch = "wasm32"))]
         self.poll_side_by_side();
         self.poll_print();

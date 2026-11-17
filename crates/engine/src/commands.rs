@@ -402,6 +402,8 @@ pub const COMMANDS: &[CommandSpec] = &[
     c("page.properties", "Page properties…", PAGES, None, Modification, "info"),
     c("help.shortcuts", "Keyboard shortcuts", HELP, None, Nothing, "circle-help"),
     c("help.github", "PdfCraft on GitHub", HELP, None, Nothing, "code-xml"),
+    // BMU PDF's updates from the office NAS: only builds with an updater show it (ui-egui updates.rs).
+    c("help.check_updates", "Check for updates…", HELP, None, Nothing, "cloud"),
     c("help.about", "About BMU PDF", HELP, None, Nothing, "info"),
 ];
 

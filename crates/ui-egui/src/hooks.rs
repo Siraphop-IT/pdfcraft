@@ -35,6 +35,35 @@ pub struct OtherWindows {
     pub send: SendTabFn,
 }
 
+/// A newer version of the app that [`Updater::check`] found.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UpdateOffer {
+    /// Its version, as shown (`0.18.42`).
+    pub version: String,
+    /// What changed, from whoever published it.
+    pub notes: String,
+}
+
+/// Looks for a newer version: `Ok(None)` when this one is the newest. Runs on a background thread.
+pub type CheckUpdateFn = std::sync::Arc<dyn Fn() -> Result<Option<UpdateOffer>, String> + Send + Sync>;
+/// Downloads the offered version, checks it and starts its installer, telling how far it got
+/// (bytes so far, total). Runs on a background thread; the app closes when it returns `Ok`.
+pub type InstallUpdateFn = std::sync::Arc<dyn Fn(&UpdateOffer, &dyn Fn(u64, u64)) -> Result<(), String> + Send + Sync>;
+
+/// Updates the app installs itself (set by the desktop app in BMU PDF's release builds for
+/// Windows, from the office NAS): Help ▸ Check for updates, and a check at start.
+pub struct Updater {
+    /// This version, as shown.
+    pub version: String,
+    pub check: CheckUpdateFn,
+    pub install: InstallUpdateFn,
+    /// How many of the app's other windows are open: they must close before the installer
+    /// replaces the program they run.
+    pub other_windows: Box<dyn Fn() -> usize>,
+    /// Check once when the window opens, and ask only when a newer version is there.
+    pub at_start: bool,
+}
+
 /// Hands a saved PDF to the page embedding PdfCraft (web): `(name, bytes, save_as)`. `save_as`
 /// is `true` for Save As. Set by the web app when a host page (such as a Nextcloud app) asked
 /// for saves; without it the browser downloads the file.

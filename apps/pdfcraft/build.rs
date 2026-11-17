@@ -15,6 +15,7 @@ fn main() {
     println!("cargo:rerun-if-changed=../../assets/app-icon/pdfcraft-document.ico");
     println!("cargo:rerun-if-changed=src/windows_manifest.rs");
     println!("cargo:rerun-if-env-changed=PDFCRAFT_REQUIRE_WINRES");
+    println!("cargo:rerun-if-env-changed=PDFCRAFT_VERSION");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
@@ -27,6 +28,10 @@ fn main() {
         .set("LegalCopyright", "Copyright (c) BMU and the PdfCraft contributors. MIT OR Apache-2.0.")
         .set("OriginalFilename", "pdfcraft.exe")
         .set("InternalName", "pdfcraft");
+    // A numbered release (BMU PDF's 0.18.42) shows its own number in Explorer's Details.
+    if let Ok(release) = std::env::var("PDFCRAFT_VERSION") {
+        res.set("ProductVersion", &release);
+    }
     if let Err(e) = res.compile() {
         if std::env::var_os("PDFCRAFT_REQUIRE_WINRES").is_some() {
             println!("cargo::error=embedding Windows resources failed: {e}");

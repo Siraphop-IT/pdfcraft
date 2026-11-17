@@ -232,7 +232,7 @@ const SIGN: &[&str] = &[
     "sign.panel",
 ];
 const WINDOW: &[&str] = &["view.next_tab", "view.previous_tab", SEP, "view.side_by_side"];
-const HELP: &[&str] = &["help.shortcuts", SEP, "help.github", SEP, "help.about"];
+const HELP: &[&str] = &["help.shortcuts", SEP, "help.github", SEP, "help.check_updates", "help.about"];
 
 /// A registry shortcut as a craft-keymap chord: `command` is ⌘ (Ctrl elsewhere) and `mac_ctrl`
 /// the Control key on macOS. `None` for a key craft-keymap doesn't name.
@@ -352,7 +352,11 @@ impl PdfCraftApp {
                 window.push(self.side_by_side_menu());
             }
         }
-        let help = list(HELP, &mut used);
+        // Check for updates only where something installs them (BMU PDF's Windows releases).
+        let help = list(HELP, &mut used)
+            .into_iter()
+            .filter(|n| self.updater.is_some() || !matches!(n, Node::Item(it) if it.command.id == "help.check_updates"))
+            .collect();
         let mut view = vec![
             Node::submenu(tl!("Zoom"), list(ZOOM, &mut used)),
             Node::submenu(tl!("Rotate view"), list(&[ROTATE_CW, ROTATE_CCW], &mut used)),
@@ -743,6 +747,9 @@ mod tests {
         for spec in commands::COMMANDS.iter().filter(|s| s.menu.is_some()) {
             if spec.id == "file.open_recent" {
                 continue; // A submenu of the recent files.
+            }
+            if spec.id == "help.check_updates" {
+                continue; // Only with an updater (tests/it/updates.rs).
             }
             let it = item(&bar, &CommandRef::new(spec.id));
             let shortcut = spec.shortcut.or((spec.id == "edit.copy").then_some(crate::commands::COPY));

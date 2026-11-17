@@ -102,7 +102,7 @@ use dialogs::protect;
 use dialogs::standards_ui;
 use dialogs::word_count_ui;
 pub use home::folders_ui;
-pub use hooks::{FailedInbox, HostDirtyFn, HostSaveFn, Inbox, OsEvent, OsEventsFn, OtherWindows};
+pub use hooks::{FailedInbox, HostDirtyFn, HostSaveFn, Inbox, OsEvent, OsEventsFn, OtherWindows, UpdateOffer, Updater};
 use menus::tab_context;
 use panels::all_tools_ui;
 use panels::comments_panel;
@@ -437,6 +437,9 @@ pub struct PdfCraftApp {
     pub os_events: Option<OsEventsFn>,
     /// The other windows a tab can be dragged into (Windows desktop).
     pub other_windows: Option<OtherWindows>,
+    /// Installs newer versions (BMU PDF on Windows, see [`Updater`]); without it there is no
+    /// update check.
+    pub updater: Option<Updater>,
     /// Save delivers to the embedding page instead of downloading (web, see [`HostSaveFn`]).
     pub host_save: Option<HostSaveFn>,
     /// Reports unsaved work to the embedding page (web, see [`HostDirtyFn`]).

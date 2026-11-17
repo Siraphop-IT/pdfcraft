@@ -428,6 +428,28 @@ fn clear_gone_windows(own: &std::path::Path) {
     }
 }
 
+/// How many of BMU PDF's other windows are open (Windows): the window sockets other than this
+/// process's that something answers on.
+#[cfg(windows)]
+pub fn other_windows_open() -> usize {
+    window_socket(std::process::id()).map_or(0, |own| windows_beside(&own))
+}
+
+/// The window sockets beside `own` (not it) that something answers on.
+#[cfg(windows)]
+fn windows_beside(own: &std::path::Path) -> usize {
+    let Some(Ok(entries)) = own.parent().map(std::fs::read_dir) else { return 0 };
+    entries
+        .flatten()
+        .take(256)
+        .filter(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            name.starts_with("window-") && name.ends_with(".sock") && entry.path() != *own && UnixStream::connect(entry.path()).is_ok()
+        })
+        .count()
+}
+
 /// The other BMU PDF window at a point on the screen, in physical pixels: its process, when that
 /// is a window taking tabs ([`accept_tabs`]) and not this one.
 #[cfg(windows)]
@@ -633,6 +655,23 @@ mod tests {
         send_tab_to(&own, r"C:\Scans\ภ.ง.ด.53 report.pdf").unwrap();
         assert_eq!(poll(), [OsEvent::Open(vec![r"C:\Scans\ภ.ง.ด.53 report.pdf".to_string()])]);
         assert!(send_tab_to(&dir.join("window-2.sock"), "a.pdf").is_err(), "no window there");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn only_other_windows_that_answer_are_counted() {
+        let path = socket("window-count");
+        let dir = path.parent().unwrap();
+        std::fs::create_dir_all(dir).unwrap();
+        let own = dir.join("window-1.sock");
+        let _own = accept_tabs_at(&own, None).expect("this window listens");
+        assert_eq!(windows_beside(&own), 0, "this window alone");
+        let _other = accept_tabs_at(&dir.join("window-2.sock"), None).expect("another window listens");
+        // Bind and drop: a window that is gone leaves its socket file behind.
+        drop(UnixListener::bind(dir.join("window-3.sock")));
+        std::fs::write(dir.join("notes.txt"), b"").unwrap();
+        assert_eq!(windows_beside(&own), 1, "the other window, not the gone one");
         let _ = std::fs::remove_dir_all(dir);
     }
 

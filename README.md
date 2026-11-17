@@ -11,7 +11,9 @@
 > **Building BMU PDF.** macOS: `CARGO_TARGET_DIR=target packaging/macos/package.sh --arch aarch64` writes
 > `dist/release/bmu-pdf-<version>-macos-aarch64.dmg`. Windows: run the **BMU PDF for Windows** workflow
 > (`.github/workflows/bmu-windows.yml`) on GitHub, or `pwsh packaging/windows/package.ps1 -Arch x64` on a Windows PC.
-> The update check, the Discord and ArtCraft links and the ArtCraft logos are removed; the app makes no network requests of its own.
+> The Discord and ArtCraft links and the ArtCraft logos are removed. The Windows releases install per user
+> (no administrator) and update themselves from the office NAS, the only network request they make: a signed
+> `update.json` (see `packaging/windows/BMU-UPDATES.md`). Upstream's GitHub update check is left out.
 
 <br>
 

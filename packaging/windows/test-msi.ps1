@@ -38,29 +38,45 @@ function Assert-NoRow([string] $Sql, [string] $What) {
   } finally { [void] $view.Close() }
 }
 
-# Test the compiled condition with Windows Installer's evaluator, in a restricted session that
-# cannot change machine state. Normal installs/repairs work, per-user overrides fail, and removal
-# of an older incorrectly scoped installation remains possible (#305).
-$scopeMessage = 'BMU PDF must be installed for all users. Run setup with administrator privileges and ALLUSERS=1; per-user installation is not supported.'
-$scopeCondition = Read-Row ('SELECT `Condition` FROM `LaunchCondition` WHERE `Description` = ''' + $scopeMessage + '''') 1
+# Per-user (no administrator), so the app can update itself: no ALLUSERS, and the summary says
+# elevation isn't needed (Word Count bit 8). Every registry row goes to HKMU (-1), which is the
+# user's own in this package; none to HKLM.
+Assert-NoRow 'SELECT `Value` FROM `Property` WHERE `Property` = ''ALLUSERS''' 'ALLUSERS (per-machine)'
+$wordCount = [int] $Database.SummaryInformation(0).Property(15)
+if (($wordCount -band 8) -eq 0) { throw "the package asks for elevation (Word Count $wordCount)" }
+Assert-NoRow 'SELECT `Registry` FROM `Registry` WHERE `Root` = 2' 'HKLM registry row'
+# The folder: %LOCALAPPDATA%\Programs\BMU PDF, set before costing in both sequences unless the
+# command line gives one.
+$folder = Read-Row 'SELECT `Action`, `Target` FROM `CustomAction` WHERE `Source` = ''INSTALLFOLDER''' 2
+Assert-Equal $folder[1] '[LocalAppDataFolder]Programs\BMU PDF\' 'per-user install folder'
+foreach ($sequence in @('InstallUISequence', 'InstallExecuteSequence')) {
+  $set = Read-Row ('SELECT `Sequence`, `Condition` FROM `' + $sequence + '` WHERE `Action` = ''' + $folder[0] + '''') 2
+  $finalize = Read-Row ('SELECT `Sequence` FROM `' + $sequence + '` WHERE `Action` = ''CostFinalize''') 1
+  if ([int] $set[0] -ge [int] $finalize[0]) { throw "$sequence must set the folder before CostFinalize" }
+  Assert-Equal $set[1] 'NOT INSTALLFOLDER' "$sequence folder condition"
+}
+
+# A copy installed for all users (every release before this one) must be removed by an
+# administrator first: its HKLM Start menu key path is looked for, and a new install refuses while
+# it is there. Removing or repairing this copy is never refused. Tested with Windows Installer's
+# evaluator, in a restricted session that cannot change machine state.
+$machineMessage = 'BMU PDF is installed for all users on this computer. Ask an administrator to uninstall it in Settings > Apps, then run this setup again: BMU PDF now installs for your account only and updates itself without an administrator.'
+$machineCondition = Read-Row ('SELECT `Condition` FROM `LaunchCondition` WHERE `Description` = ''' + $machineMessage + '''') 1
+$machineSearch = Read-Row 'SELECT `Root`, `Key`, `Name` FROM `RegLocator`, `AppSearch` WHERE `AppSearch`.`Signature_` = `RegLocator`.`Signature_` AND `AppSearch`.`Property` = ''MACHINEBMUPDF''' 3
+Assert-Equal $machineSearch[0] '2' 'all-users copy search HKLM root'
+Assert-Equal $machineSearch[1] 'Software\BMUPDF\Shortcuts' 'all-users copy search key'
+Assert-Equal $machineSearch[2] 'StartMenu' 'all-users copy search value'
 $Installer.UILevel = 2
 $session = $null
 try {
   $session = $Installer.OpenPackage((Resolve-Path -LiteralPath $Path).Path, 1)
   foreach ($case in @(
-      @('machine install', '1', '', '', '', 1),
-      @('machine repair', '1', '', '1', '', 1),
-      @('forced per-user install', '2', '1', '', '', 0),
-      @('empty ALLUSERS', '', '', '', '', 0),
-      @('resolved per-user install', '', '1', '', '', 0),
-      @('forced per-user repair', '2', '1', '1', '', 0),
-      @('machine uninstall', '1', '', '1', 'ALL', 1),
-      @('legacy per-user uninstall', '', '1', '1', 'ALL', 1))) {
-    $session.Property('ALLUSERS') = $case[1]
-    $session.Property('MSIINSTALLPERUSER') = $case[2]
-    $session.Property('Installed') = $case[3]
-    $session.Property('REMOVE') = $case[4]
-    Assert-Equal ($session.EvaluateCondition($scopeCondition[0])) $case[5] $case[0]
+      @('first install', '', '', 1),
+      @('install beside an all-users copy', '#1', '', 0),
+      @('update or removal with an all-users copy still there', '#1', '1', 1))) {
+    $session.Property('MACHINEBMUPDF') = $case[1]
+    $session.Property('Installed') = $case[2]
+    Assert-Equal ($session.EvaluateCondition($machineCondition[0])) $case[3] $case[0]
   }
 } finally {
   if ($session) { [void] [Runtime.InteropServices.Marshal]::FinalReleaseComObject($session) }
@@ -70,7 +86,7 @@ foreach ($sequence in @('InstallUISequence', 'InstallExecuteSequence')) {
   Assert-Equal $launch[0] '' "$sequence launch conditions are unconditional"
   $cost = Read-Row ('SELECT `Sequence` FROM `' + $sequence + '` WHERE `Action` = ''CostInitialize''') 1
   if ([int] $launch[1] -le 0 -or [int] $launch[1] -ge [int] $cost[0]) {
-    throw "$sequence must reject per-user overrides before costing"
+    throw "$sequence must refuse an install beside an all-users copy before costing"
   }
 }
 $manufacturer = Read-Row 'SELECT `Value` FROM `Property` WHERE `Property` = ''Manufacturer''' 1
@@ -105,7 +121,7 @@ Assert-NoRow 'SELECT `Event` FROM `EventMapping` WHERE `Dialog_` = ''InstallProg
 
 # Plain (non-advertised) shortcuts to pdfcraft.exe, each in its own component; the desktop one is
 # gated by INSTALLDESKTOPSHORTCUT, which is secure so the UI choice reaches the
-# elevated install.
+# install.
 foreach ($entry in @(@('StartMenuShortcut', 'ProgramMenuFolder', 'PdfcraftStartMenuShortcut', ''),
                      @('DesktopShortcut', 'DesktopFolder', 'PdfcraftDesktopShortcut', 'INSTALLDESKTOPSHORTCUT = 1'))) {
   $row = Read-Row ('SELECT `Directory_`, `Target`, `Icon_`, `WkDir`, `Component_` FROM `Shortcut` WHERE `Shortcut` = ''' + $entry[0] + '''') 5
@@ -172,17 +188,15 @@ $checked = Read-Row 'SELECT `Value` FROM `CheckBox` WHERE `Property` = ''INSTALL
 Assert-Equal $checked[0] '1' 'Welcome checkbox value'
 $app = Read-Row 'SELECT `KeyPath` FROM `Component` WHERE `Component` = ''PdfcraftApp''' 1
 Assert-Equal $app[0] 'PdfcraftExe' 'Shortcut executable key path'
-$scope = Read-Row 'SELECT `Value` FROM `Property` WHERE `Property` = ''ALLUSERS''' 1
-Assert-Equal $scope[0] '1' 'Per-machine shortcut scope'
 
-# Each File Explorer menu remembers whether it was installed by finding its key path in HKLM, in the
+# Each File Explorer menu remembers whether it was installed by finding its key path in HKCU, in the
 # package's own registry view (64-bit for x64 and arm64). Only a release that offered the menu can
 # leave it out, so the OnlyDetect Upgrade rows start at the first release with that menu.
 $upgradeCode = Read-Row 'SELECT `Value` FROM `Property` WHERE `Property` = ''UpgradeCode''' 1
 $view64 = $Database.SummaryInformation(0).Property(7) -notmatch '^Intel;'
 function Assert-MenuSearch([string] $Found, [string] $Key, [string] $Release, [string] $Since, [string] $What) {
   $search = Read-Row ('SELECT `Root`, `Key`, `Name`, `Type` FROM `RegLocator`, `AppSearch` WHERE `AppSearch`.`Signature_` = `RegLocator`.`Signature_` AND `AppSearch`.`Property` = ''' + $Found + '''') 4
-  Assert-Equal $search[0] '2' "$What search HKLM root"
+  Assert-Equal $search[0] '1' "$What search HKCU root"
   Assert-Equal $search[1] $Key "$What search key"
   Assert-Equal $search[2] '' "$What search reads the default value"
   # msidbLocatorTypeRawValue (2), plus msidbLocatorType64bit (16) in a 64-bit package.
@@ -213,7 +227,7 @@ foreach ($ext in @('png', 'jpg', 'jpeg', 'tif', 'tiff', 'gif', 'bmp', 'jp2', 'j2
   $menu = Read-Row ('SELECT `Value`, `Component_`, `Root` FROM `Registry` WHERE `Key` = ''' + $key + ''' AND `Name` IS NULL') 3
   Assert-Equal $menu[0] 'Create PDF with BMU PDF…' "$ext context menu label"
   Assert-Equal $menu[1] 'PdfcraftImageContextMenu' "$ext context menu component"
-  Assert-Equal $menu[2] '2' "$ext context menu HKLM root"
+  Assert-Equal $menu[2] '-1' "$ext context menu HKMU root"
   $command = Read-Row ('SELECT `Value`, `Component_` FROM `Registry` WHERE `Key` = ''' + $key + '\command''') 2
   Assert-Equal $command[0] '"[#PdfcraftExe]" --create-images "%1"' "$ext context menu command"
   Assert-Equal $command[1] 'PdfcraftImageContextMenu' "$ext context menu command component"
@@ -246,7 +260,7 @@ $pdfKey = 'Software\Classes\SystemFileAssociations\.pdf\shell\BMUPDF.Edit'
 $pdfMenu = Read-Row ('SELECT `Registry`, `Value`, `Component_`, `Root` FROM `Registry` WHERE `Key` = ''' + $pdfKey + ''' AND `Name` IS NULL') 4
 Assert-Equal $pdfMenu[1] 'Edit with BMU PDF' 'PDF context menu label'
 Assert-Equal $pdfMenu[2] 'PdfcraftPdfContextMenu' 'PDF context menu component'
-Assert-Equal $pdfMenu[3] '2' 'PDF context menu HKLM root'
+Assert-Equal $pdfMenu[3] '-1' 'PDF context menu HKMU root'
 foreach ($value in @(@('Icon', '"[#PdfcraftExe]",0'), @('MultiSelectModel', 'Document'))) {
   $row = Read-Row ('SELECT `Value`, `Component_` FROM `Registry` WHERE `Key` = ''' + $pdfKey + ''' AND `Name` = ''' + $value[0] + '''') 2
   Assert-Equal $row[0] $value[1] "PDF context menu $($value[0])"
@@ -311,7 +325,7 @@ foreach ($pair in $combineVerbs) {
   $menu = Read-Row ('SELECT `Value`, `Component_`, `Root` FROM `Registry` WHERE `Key` = ''' + $key + ''' AND `Name` IS NULL') 3
   Assert-Equal $menu[0] 'Combine files in BMU PDF' "$ext Combine label"
   Assert-Equal $menu[1] $component "$ext Combine component"
-  Assert-Equal $menu[2] '2' "$ext Combine machine-wide root"
+  Assert-Equal $menu[2] '-1' "$ext Combine HKMU root"
   $selection = Read-Row ('SELECT `Value`, `Component_` FROM `Registry` WHERE `Key` = ''' + $key + ''' AND `Name` = ''MultiSelectModel''') 2
   Assert-Equal $selection[0] 'Document' "$ext Combine selection"
   Assert-Equal $selection[1] $component "$ext Combine selection component"
@@ -323,4 +337,4 @@ $rm = Read-Row 'SELECT `Dialog` FROM `Dialog` WHERE `Dialog` = ''MsiRMFilesInUse
 Assert-Equal $rm[0] 'MsiRMFilesInUse' 'Files-in-use dialog'
 [void] [Runtime.InteropServices.Marshal]::FinalReleaseComObject($Database)
 [void] [Runtime.InteropServices.Marshal]::FinalReleaseComObject($Installer)
-Write-Output 'ok MSI: per-machine scope guard, publisher, persistent progress text, Start Menu shortcut, optional desktop shortcut and PDF and image context menus (on for a first install, kept on update only while present; checkboxes for the first two), icon/key path, full-UI success/cancel/error and Finish controls, files-in-use dialog, OCR models'
+Write-Output 'ok MSI: per-user scope (no elevation, no HKLM rows, the folder under LocalAppData), refusal beside an all-users copy, publisher, persistent progress text, Start Menu shortcut, optional desktop shortcut and PDF and image context menus (on for a first install, kept on update only while present; checkboxes for the first two), icon/key path, full-UI success/cancel/error and Finish controls, files-in-use dialog, OCR models'

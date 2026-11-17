@@ -1787,11 +1787,11 @@ title = "Help ▸ Check for updates"
 area = "B"
 tier = "P2"
 milestone = "M3"
-status = "na"
-commands = []
+status = "shipped"
+commands = ["help.check_updates"]
 tools = []
-evidence = []
-notes = "Removed in BMU PDF by the owner's decision (no network access; updates are installed by the office). Upstream PdfCraft asks GitHub Releases on request."
+evidence = ["crates/ui-egui/tests/it/updates.rs::a_newer_version_found_at_start_installs_when_asked_and_the_app_closes", "crates/ui-egui/tests/it/updates.rs::the_check_at_start_is_silent_unless_there_is_a_newer_version_and_asking_always_answers", "crates/ui-egui/tests/it/updates.rs::an_unsaved_document_holds_the_update_back", "apps/pdfcraft/src/update.rs::only_a_manifest_signed_with_the_release_key_is_believed", "apps/pdfcraft/src/update.rs::the_installer_is_kept_only_when_it_matches_the_manifest"]
+notes = "BMU PDF (Windows release builds only) checks the office NAS, not GitHub: a signed update.json (Ed25519, the office's release key) at start and on request, asks before installing, needs every document saved and BMU PDF's other windows closed, then runs the per-user MSI and reopens. The only network request BMU PDF makes, and only to the NAS. Not in: a check while the app stays open, mandatory updates, a headless automation tool, other platforms."
 
 [[feature]]
 id = "view.single-key-accelerators"

@@ -149,6 +149,16 @@ fn every_registered_command_is_implemented() {
         if spec.id == "view.layout.cover" {
             app.set_option("layout", "two-up").unwrap();
         }
+        // Check for updates runs only where something installs updates: one that finds nothing.
+        if spec.id == "help.check_updates" {
+            app.updater = Some(pdfcraft_ui_egui::Updater {
+                version: "0.18.7".into(),
+                check: std::sync::Arc::new(|| Ok(None)),
+                install: std::sync::Arc::new(|_, _| Err("not here".into())),
+                other_windows: Box::new(|| 0),
+                at_start: false,
+            });
+        }
         // History commands need a real jump (and Back first to make Forward available).
         if matches!(spec.id, "view.previous_view" | "view.next_view") {
             app.views[0].go_to_page(1);

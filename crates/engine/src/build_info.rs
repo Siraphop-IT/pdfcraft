@@ -3,8 +3,15 @@
 //! it can be told from the release of the same version. The version itself stays the release's:
 //! the update check compares it with published releases.
 
-/// The release version from the workspace `Cargo.toml`.
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The release version: `PDFCRAFT_VERSION` when a release build sets it at compile time (BMU PDF's
+/// Windows builds number each release, `0.18.42`), otherwise the workspace `Cargo.toml`'s.
+pub const VERSION: &str = match RELEASE {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
+/// The release number a release build was given (`PDFCRAFT_VERSION`), which updates compare.
+pub const RELEASE: Option<&str> = option_env!("PDFCRAFT_VERSION");
 
 /// The compile-time build label, if any.
 pub const LABEL: Option<&str> = option_env!("PDFCRAFT_BUILD_LABEL");

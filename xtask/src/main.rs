@@ -3,6 +3,7 @@
 use std::process::ExitCode;
 
 mod assets;
+mod bmu_update;
 mod corpus;
 mod demo_pdf;
 mod fuzz;
@@ -48,6 +49,7 @@ const COMMANDS: &[(&str, &str, Command)] = &[
     ),
     ("screenshots", "Regenerate the README screenshots in docs/images/ and their ATTRIBUTION entries", screenshots::run),
     ("models", "Fetch the OCR models (ATTRIBUTION.toml kind = \"model\") into assets/models/, verified by SHA-256", assets::models),
+    ("bmu-update", "BMU PDF's update release key and signed update.json for the office NAS (keygen, sign, public)", bmu_update::run),
     ("demo-pdf", "Build dist/demo/pdfcraft-showcase.pdf (needs Google Chrome or Chromium)", demo_pdf::run),
 ];
 

@@ -23,7 +23,8 @@ craft-keymap = { git = "https://github.com/storytold/craft-libs", version = "0.1
 craft-print = { git = "https://github.com/storytold/craft-libs", version = "0.1.0", rev = "787a7a0f972fd1d7a7618fdbeca3a5267a0407ff" }
 # Whether a path stored in a document may be opened (GoToR link targets).
 craft-docpath = { version = "0.1.0", git = "https://github.com/storytold/craft-libs", rev = "787a7a0f972fd1d7a7618fdbeca3a5267a0407ff" }
-# craft-update (the self-updater) is left out of BMU PDF: the app makes no network requests.
+# craft-update (the self-updater) is left out of BMU PDF: it updates from the office NAS instead
+# (apps/pdfcraft/src/update.rs), its only network request.
 # internal
 pdfcraft-geom = { path = "crates/geom", version = "0.18.0" }
 pdfcraft-filters = { path = "crates/filters", version = "0.18.0" }

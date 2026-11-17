@@ -49,6 +49,8 @@ mod settings;
 mod single_instance;
 mod startup;
 mod text_scale;
+#[cfg(windows)]
+mod update;
 #[cfg(test)]
 #[path = "windows_manifest.rs"]
 mod windows_manifest;
@@ -262,10 +264,13 @@ fn main() -> eframe::Result {
         single_instance::Claim::Primary(server) => Some(server),
         single_instance::Claim::Alone => None,
     };
+    // The first window looks for an update at start; windows opened beside it (a tab dragged
+    // out, `--new-window`) don't ask again.
+    let first = instance.is_some();
     // Each window also takes the tabs dragged out of the app's other windows (Windows).
     let instance = single_instance::accept_tabs(instance);
     let choice = renderer_choice(std::env::var("PDFCRAFT_RENDERER").ok().as_deref());
-    let launch = Launch { files, options, control_file, create_images, combine, integrated, window_controls, two_paged };
+    let launch = Launch { files, options, control_file, create_images, combine, integrated, window_controls, two_paged, first };
     // Finder, Open With and the Dock deliver files as Apple events, not arguments; catch the one
     // that launched us as well as later ones. Lives until the event loop returns.
     #[cfg(target_os = "macos")]
@@ -378,6 +383,8 @@ struct Launch {
     /// The window buttons the app draws, when the desktop leaves the frame to it.
     window_controls: Option<pdfcraft_ui_egui::window_controls::Layout>,
     two_paged: bool,
+    /// The first window of the sign-in (not one opened beside it).
+    first: bool,
 }
 
 /// Whether the window is a native Wayland one (not X11 or XWayland).
@@ -398,7 +405,7 @@ fn app_creator<'a>(
     instance: Option<&'a single_instance::Server>,
     #[cfg(target_os = "macos")] apple_events: &'a apple_events::AppleEvents,
 ) -> eframe::AppCreator<'a> {
-    let Launch { files, options, control_file, create_images, combine, integrated, window_controls, two_paged } = launch;
+    let Launch { files, options, control_file, create_images, combine, integrated, window_controls, two_paged, first } = launch;
     Box::new(move |cc| {
         started.set(true);
         let mut app = PdfCraftApp::new();
@@ -443,7 +450,11 @@ fn app_creator<'a>(
                 at: Box::new(single_instance::window_at),
                 send: Box::new(|window, path| single_instance::send_tab(window, path).map_err(|e| e.to_string())),
             });
+            // Updates from the office NAS (release builds only).
+            app.updater = update::updater(first && control_file.is_none());
         }
+        #[cfg(not(windows))]
+        let _ = first;
         if let Some(file) = &control_file {
             let client = app.attach_control(&cc.egui_ctx);
             open_control_channel(file, pdfcraft_ui_egui::control::serve(client))?;
