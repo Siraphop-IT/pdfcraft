@@ -6566,7 +6566,7 @@ status = "na"
 commands = []
 tools = []
 evidence = []
-notes = "Adobe-hosted list; use OS trust stores and EU Trusted Lists"
+notes = "Adobe-hosted list; use OS trust stores and EU Trusted Lists. BMU PDF trusts the Thailand National Root CA - G1 (and offers Thai Digital ID CA G3 for chains) out of the box: crates/sign/src/pdf/anchors.rs"
 
 [[feature]]
 id = "sign.request-esignatures"

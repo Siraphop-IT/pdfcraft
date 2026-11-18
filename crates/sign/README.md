@@ -69,6 +69,10 @@ needs a prompt to open is listed and asks at signing (issue #179).
   revisions are diffed against the signed one, and the changes are classified (signing, form
   fill, comments, metadata, page content, document structure) under the DocMDP permissions.
   The verdict follows Acrobat: valid, unknown (intact but the identity isn't trusted) or invalid.
+- **Built-in authorities (BMU PDF).** `pdf/anchors.rs` trusts the Thailand National Root
+  Certification Authority - G1 (ETDA) on top of the user's `TrustStore`, and offers Thai Digital
+  ID CA G3 for building chains (documents from the Department of Business Development carry only
+  the signer's certificate). Neither is listed, saved or removable as a user certificate.
 - **Chains are checked, not just linked.** `x509::build_chain` only takes an issuer whose key
   verifies the certificate below it *and* that may issue: `basicConstraints` CA:TRUE (an old v1
   self-signed root without constraints counts), `keyCertSign` when it has a key usage, a

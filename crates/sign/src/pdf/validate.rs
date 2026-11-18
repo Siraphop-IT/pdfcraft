@@ -123,7 +123,7 @@ pub(super) fn validate_into(doc: &Document, bytes: &[u8], trust: &TrustStore, v:
                     // time; otherwise its time is reported but validation uses the signer's
                     // own claimed time, as without a timestamp.
                     let mut pool = crate::timestamp::token_certs(raw);
-                    pool.extend(trust.certs.iter().cloned());
+                    pool.extend(trust.chain_pool());
                     let tsa = t.signer_certificate();
                     let trusted_tsa = tsa
                         .as_ref()
@@ -221,7 +221,7 @@ fn finish_validation(context: SignatureValidation<'_>, verified: VerifiedSignatu
     let VerifiedSignature { covered, certificate: cert, embedded, cms_time, unverified_time } = verified;
     info.signing_time = cms_time.or_else(|| info.date.as_deref().and_then(Time::from_pdf));
     let mut pool = embedded.to_vec();
-    pool.extend(trust.certs.iter().cloned());
+    pool.extend(trust.chain_pool());
     // The time the chain is judged at: trusted timestamp, else the signer's claimed time.
     let at = info.timestamp_time.or(info.signing_time);
     let (chain, refused) = build_chain_noted(&cert, &pool, at);
@@ -541,7 +541,7 @@ pub(super) fn validate_doc_timestamp(doc: &Document, bytes: &[u8], v: &Dict, inf
         // An untrusted TSA is not proof of anything: the verdict stays Unknown, like an
         // ordinary signature from an unknown signer.
         let mut pool = crate::timestamp::token_certs(&contents);
-        pool.extend(trust.certs.iter().cloned());
+        pool.extend(trust.chain_pool());
         // A trusted authority whose certificate was not valid at the time it stamped proves
         // nothing either (its detail is already recorded above): never upgrade that to Valid.
         // Nor does one whose certificate is not issued for time stamping.

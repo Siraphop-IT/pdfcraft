@@ -1,14 +1,24 @@
 use super::Certificate;
 
-/// Certificates the user trusts for signing (Acrobat: Trusted Certificates).
+/// Certificates the user trusts for signing (Acrobat: Trusted Certificates). The built-in
+/// authorities ([`super::anchors`]) are trusted on top of these and are never listed here.
 #[derive(Clone, Debug, Default)]
 pub struct TrustStore {
     pub certs: Vec<Certificate>,
 }
 
 impl TrustStore {
+    /// Whether `c` is an anchor: one of the user's certificates or a built-in root
+    /// ([`super::anchors`]).
     pub(super) fn trusts(&self, c: &Certificate) -> bool {
-        self.certs.iter().any(|t| t.raw == c.raw)
+        self.certs.iter().chain(super::anchors::anchors()).any(|t| t.raw == c.raw)
+    }
+
+    /// Certificates a chain may be built through: the user's, then the built-in ones.
+    pub(super) fn chain_pool(&self) -> Vec<Certificate> {
+        let mut pool = self.certs.clone();
+        pool.extend(super::anchors::chain_certificates().cloned());
+        pool
     }
 }
 

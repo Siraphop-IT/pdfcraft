@@ -23,6 +23,7 @@ use crate::keys::DigestAlg;
 use crate::pkcs12::DigitalId;
 use crate::x509::{Certificate, build_chain, build_chain_noted};
 
+mod anchors;
 mod changes;
 mod listing;
 mod signing;
